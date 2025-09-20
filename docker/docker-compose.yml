@@ -1,0 +1,81 @@
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "100m"
+      max-file: "3"
+
+x-image: &image-settings
+  image: data-platform:latest
+
+x-common: &common-settings
+  restart: unless-stopped
+  <<: [*default-logging, *image-settings]
+
+services:  
+  data-platform-api:
+    <<: *common-settings
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    container_name: data-platform-api
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-mysql+aiomysql://root:password@localhost:3306/data_platform}
+      - REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://localhost:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://localhost:6379/2}
+      - SECRET_KEY=${SECRET_KEY:-data-platform-secret-key}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 1
+    ports:
+      - "8000:8000"
+    networks:
+      - server-network
+    volumes:
+      - ./logs:/project/logs
+
+  data-platform-worker:
+    <<: *common-settings
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.worker
+    container_name: data-platform-worker
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-mysql+aiomysql://root:password@localhost:3306/data_platform}
+      - REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://localhost:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://localhost:6379/2}
+      - SECRET_KEY=${SECRET_KEY:-data-platform-secret-key}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    command: celery -A src.worker.main worker -Q task_execution,docker_management,monitoring -l info --concurrency=4
+    networks:
+      - server-network
+    volumes:
+      - ./logs:/project/logs
+      - ~/.ssh:/root/.ssh:ro  # SSH密钥，用于连接Docker执行机器
+
+  data-platform-flower:
+    <<: *common-settings
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.flower
+    container_name: data-platform-flower
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-mysql+aiomysql://root:password@localhost:3306/data_platform}
+      - REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://localhost:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://localhost:6379/2}
+      - SECRET_KEY=${SECRET_KEY:-data-platform-secret-key}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    command: celery -A src.worker.main flower --port=5555 --basic_auth=admin:admin123
+    ports:
+      - "5555:5555"
+    networks:
+      - server-network
+    volumes:
+      - ./logs:/project/logs
+
+networks:
+  server-network:
+    ipam:
+      driver: default

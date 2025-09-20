@@ -1,0 +1,249 @@
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[project]
+name = "data-platform"
+version = "1.0.0"
+description = "数据采集任务管理系统 - 基于FastAPI、MySQL、Redis、Celery"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"},
+]
+dependencies = [
+    "fastapi>=0.111.1,<1.0.0",
+    "uvicorn[standard]>=0.24.0,<1.0.0",
+    "sqlalchemy>=2.0.20,<3.0.0",
+    "alembic>=1.13.0,<2.0.0",
+    "pymysql>=1.1.0,<2.0.0",
+    "aiomysql>=0.2.0,<1.0.0",
+    "cryptography>=3.4.8",
+    "redis==5.0.7",
+    "celery>=5.4.0,<6.0.0",
+    "kombu>=5.3.0,<6.0.0",
+    "flower>=2.0.0,<3.0.0",
+    "pydantic>=2.5.0,<3.0.0",
+    "pydantic-settings>=2.1.0,<3.0.0",
+    "python-jose[cryptography]>=3.3.0,<4.0.0",
+    "passlib[bcrypt]>=1.7.4,<2.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "itsdangerous>=2.1.0,<3.0.0",
+    "httpx>=0.25.0,<1.0.0",
+    "docker>=6.1.0,<7.0.0",
+    "APScheduler>=3.10.0,<4.0.0",
+    "loguru>=0.7.2,<1.0.0",
+    "email-validator>=2.3.0",
+]
+requires-python = ">=3.12"
+readme = "README.md"
+keywords = ["fastapi", "celery", "crawler", "data-platform", "mysql", "redis"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "isort>=5.12.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "httpx>=0.25.0",
+    "factory-boy>=3.0.0",
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.0.0",
+    "mkdocstrings[python]>=0.20.0",
+]
+
+[project.scripts]
+data-platform-web = "src.main:main"
+
+[project.urls]
+Homepage = "https://github.com/your-username/data-platform"
+Repository = "https://github.com/your-username/data-platform"
+Documentation = "https://your-username.github.io/data-platform"
+"Bug Tracker" = "https://github.com/your-username/data-platform/issues"
+
+[tool.pdm]
+distribution = true
+
+[tool.pdm.dev-dependencies]
+dev = [
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "isort>=5.12.0",
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.0.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+
+[tool.pdm.scripts]
+# === 启动服务器 ===
+start = "uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
+
+# === Celery服务 ===
+worker = "celery -A src.worker.main worker -Q task_execution,docker_management,monitoring -l info --concurrency=4"
+beat = "celery -A src.worker.main beat --loglevel=info"
+flower = "celery -A src.worker.main flower --port=5555 --basic_auth=admin:admin123"
+
+# === 智能Celery启动 ===
+"celery:worker" = "celery -A src.worker.main worker -Q task_execution,docker_management,monitoring -l info --concurrency=4"
+"celery:beat" = "celery -A src.worker.main beat --loglevel=info"
+"celery:flower" = "celery -A src.worker.main flower --port=5555 --basic_auth=admin:admin123"
+"celery:all" = {shell = "echo '启动所有Celery服务...' && echo '请在新终端中分别运行:' && echo '  pdm run celery:worker' && echo '  pdm run celery:beat' && echo '  pdm run celery:flower' && echo '监控界面: http://localhost:5555'"}
+
+# === 数据库管理 ===
+db-init = "alembic revision --autogenerate -m 'Initial migration'"
+db-upgrade = "alembic upgrade head"
+db-downgrade = "alembic downgrade -1"
+"db:init" = {call = "scripts.db_init:main", help = "智能数据库初始化"}
+"db:reset" = {composite = ["alembic downgrade base", "alembic upgrade head"], help = "重置数据库"}
+
+# === 代码质量 ===
+lint = {composite = ["black src/ scripts/ --check", "flake8 src/ scripts/", "isort src/ scripts/ --check-only"]}
+format = {composite = ["black src/ scripts/", "isort src/ scripts/"]}
+type-check = "mypy src/ scripts/"
+
+# === 测试 ===
+test = "pytest tests/ -v --cov=src --cov-report=html"
+test-fast = "pytest tests/ -x -v"
+"test:unit" = "pytest tests/unit/ -v"
+"test:integration" = "pytest tests/integration/ -v"
+
+# === 文档 ===
+docs = {shell = "echo '📖 API文档: http://localhost:8000/docs' && echo '📋 ReDoc: http://localhost:8000/redoc'"}
+"docs:open" = {shell = "python -c 'import webbrowser; webbrowser.open(\"http://localhost:8000/docs\")'"}
+
+# === 监控 ===
+"monitor:flower" = {shell = "echo '📊 Celery监控: http://localhost:5555' && python -c 'import webbrowser; webbrowser.open(\"http://localhost:5555\")'"}
+"monitor:health" = {shell = "curl -s http://localhost:8000/health | python -m json.tool"}
+
+# === Docker相关 ===
+"docker:build" = {shell = "echo '构建所有Docker镜像...' && docker build -f docker/Dockerfile.web -t data-platform-web:latest . && docker build -f docker/Dockerfile.worker -t data-platform-worker:latest . && docker build -f docker/Dockerfile.flower -t data-platform-flower:latest ."}
+"docker:build:web" = "docker build -f docker/Dockerfile.web -t data-platform-web:latest ."
+"docker:build:worker" = "docker build -f docker/Dockerfile.worker -t data-platform-worker:latest ."
+"docker:build:flower" = "docker build -f docker/Dockerfile.flower -t data-platform-flower:latest ."
+"docker:up" = "docker-compose -f docker/docker-compose.yml up -d"
+"docker:down" = "docker-compose -f docker/docker-compose.yml down"
+"docker:logs" = "docker-compose -f docker/docker-compose.yml logs -f"
+
+# === 清理 ===
+clean = {shell = "find . -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true; find . -name '*.pyc' -delete"}
+"clean:docker" = {shell = "docker system prune -f && docker image prune -f"}
+"clean:all" = {composite = ["clean", "rm -rf .pytest_cache", "rm -rf htmlcov", "rm -rf .coverage"], help = "清理所有临时文件"}
+
+# === 项目信息 ===
+info = {shell = "pdm info && echo '\n📋 可用脚本:' && pdm run --list"}
+version = {shell = "python -c 'from src.config.auth_config import settings; print(f\"数据采集任务管理系统 v1.0.0\")'"}
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+known_first_party = ["src"]
+
+[tool.flake8]
+max-line-length = 88
+extend-ignore = ["E203", "W503"]
+exclude = [".git", "__pycache__", "build", "dist", ".eggs"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+
+[[tool.mypy.overrides]]
+module = [
+    "celery.*",
+    "redis.*",
+    "alembic.*",
+    "loguru.*",
+]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=src",
+    "--cov-report=html",
+    "--cov-report=term-missing",
+]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+asyncio_mode = "auto"
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/alembic/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if self.debug:",
+    "if settings.DEBUG",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if 0:",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]

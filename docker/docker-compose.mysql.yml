@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  # MySQL 8.0 数据库
+  mysql:
+    image: mysql:8.0
+    container_name: mysql80
+    environment:
+      - MYSQL_ROOT_PASSWORD=123456
+      - MYSQL_DATABASE=data_platform
+      - MYSQL_USER=app_user
+      - MYSQL_PASSWORD=123456
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4 
+      --collation-server=utf8mb4_unicode_ci 
+      --bind-address=0.0.0.0
+      --skip-name-resolve
+      --skip-networking=false
+      --default-authentication-plugin=mysql_native_password
+    restart: unless-stopped
+    network_mode: bridge
+
+volumes:
+  mysql_data:
+    driver: local

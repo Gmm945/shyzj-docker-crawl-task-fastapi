@@ -1,0 +1,22 @@
+# 爬虫服务依赖包
+# 基础HTTP请求库
+requests>=2.25.1
+
+# HTML解析库
+beautifulsoup4>=4.9.3
+lxml>=4.6.3
+
+# 异步HTTP库（可选）
+aiohttp>=3.8.0
+
+# 用户代理库
+fake-useragent>=1.1.0
+
+# 数据处理库
+pandas>=1.3.0
+
+# JSON处理增强
+ujson>=4.0.0
+
+# 日志增强
+colorlog>=6.0.0

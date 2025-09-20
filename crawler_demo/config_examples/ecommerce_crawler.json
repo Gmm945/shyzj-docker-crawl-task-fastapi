@@ -1,0 +1,44 @@
+{
+  "task_name": "电商网站爬虫",
+  "task_type": "docker-crawl",
+  "docker_image": "your-company/ecommerce-crawler:latest",
+  "base_url": "https://httpbin.org",
+  "target_urls": [
+    "https://httpbin.org/html",
+    "https://httpbin.org/json",
+    "https://httpbin.org/xml"
+  ],
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+  "timeout": 45,
+  "delay": 3,
+  "max_retries": 5,
+  "output_config": {
+    "format": "json",
+    "save_path": "/app/output",
+    "filename_prefix": "ecommerce_data",
+    "compression": "gzip"
+  },
+  "crawl_config": {
+    "max_pages": 100,
+    "extract_links": true,
+    "extract_images": false,
+    "data_fields": [
+      "title",
+      "price",
+      "description",
+      "category",
+      "availability",
+      "rating"
+    ],
+    "custom_selectors": {
+      "title": "h1, .product-title",
+      "price": ".price, .cost",
+      "description": ".description, .product-desc"
+    }
+  },
+  "filters": {
+    "min_price": 0,
+    "max_price": 10000,
+    "categories": ["electronics", "books", "clothing"]
+  }
+}

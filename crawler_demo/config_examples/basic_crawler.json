@@ -1,0 +1,26 @@
+{
+  "task_name": "基础爬虫任务",
+  "task_type": "docker-crawl",
+  "docker_image": "your-company/crawler-service:latest",
+  "base_url": "https://httpbin.org",
+  "target_urls": [
+    "https://httpbin.org/get",
+    "https://httpbin.org/json",
+    "https://httpbin.org/html",
+    "https://httpbin.org/xml"
+  ],
+  "user_agent": "Mozilla/5.0 (compatible; DataCollector/1.0)",
+  "timeout": 30,
+  "delay": 2,
+  "max_retries": 3,
+  "output_config": {
+    "format": "json",
+    "save_path": "/app/output",
+    "filename_prefix": "basic_crawler_data"
+  },
+  "crawl_config": {
+    "extract_links": true,
+    "extract_images": false,
+    "follow_redirects": true
+  }
+}

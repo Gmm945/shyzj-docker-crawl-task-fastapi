@@ -1,0 +1,48 @@
+{
+  "task_name": "新闻网站爬虫",
+  "task_type": "docker-crawl",
+  "docker_image": "your-company/news-crawler:v1.2.0",
+  "base_url": "https://httpbin.org",
+  "target_urls": [
+    "https://httpbin.org/html",
+    "https://httpbin.org/json"
+  ],
+  "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+  "timeout": 60,
+  "delay": 5,
+  "max_retries": 3,
+  "output_config": {
+    "format": "json",
+    "save_path": "/app/output",
+    "filename_prefix": "news_data",
+    "batch_size": 100
+  },
+  "crawl_config": {
+    "max_articles": 500,
+    "extract_links": true,
+    "extract_images": true,
+    "data_fields": [
+      "title",
+      "content",
+      "author",
+      "publish_date",
+      "category",
+      "tags",
+      "url"
+    ],
+    "custom_selectors": {
+      "title": "h1, .article-title, .headline",
+      "content": ".article-content, .post-content, .story-body",
+      "author": ".author, .byline, .writer",
+      "publish_date": ".publish-date, .date, time"
+    }
+  },
+  "filters": {
+    "date_range": {
+      "start_date": "2024-01-01",
+      "end_date": "2024-12-31"
+    },
+    "categories": ["technology", "business", "sports"],
+    "min_content_length": 100
+  }
+}
