@@ -1,21 +1,22 @@
 import hashlib
-import os
 import json
 from typing import Any, Optional
 from loguru import logger
 import redis.asyncio as redis
 import redis as redis_sync
+from ..config.auth_config import settings
 
 class AsyncCacheManager:
-    def __init__(self, redis_db: int = int(os.getenv("REDIS_DB", 0)), default_ttl: int = 7200):
+    def __init__(self, redis_db: int = None, default_ttl: int = 7200):
         """
         初始化异步缓存管理器
-        :param redis_db: Redis 数据库编号
+        :param redis_db: Redis 数据库编号，如果为None则从settings获取
         :param default_ttl: 默认缓存过期时间，默认为 7200 秒（2 小时）
         """
-        self.redis_host = os.getenv("REDIS_HOST")
-        self.redis_port = os.getenv("REDIS_PORT", "6379")
-        self.redis_db = redis_db
+        self.redis_host = settings.REDIS_HOST
+        self.redis_port = settings.REDIS_PORT
+        self.redis_db = redis_db if redis_db is not None else settings.REDIS_DB
+        self.redis_password = settings.REDIS_PASSWORD
         self.default_ttl = default_ttl
         self.redis_client = None
         self._sync_pool: Optional[redis_sync.ConnectionPool] = None
@@ -23,12 +24,16 @@ class AsyncCacheManager:
 
     async def connect_redis(self):
         try:
-            self.redis_client = redis.Redis(
-                host=self.redis_host,
-                port=self.redis_port,
-                db=self.redis_db,
-                decode_responses=True
-            )
+            redis_kwargs = {
+                "host": self.redis_host,
+                "port": self.redis_port,
+                "db": self.redis_db,
+                "decode_responses": True
+            }
+            if self.redis_password:
+                redis_kwargs["password"] = self.redis_password
+                
+            self.redis_client = redis.Redis(**redis_kwargs)
             logger.info("Redis 连接成功")
         except redis.ConnectionError as e:
             logger.error(f"Redis 连接失败: {e}")
@@ -95,12 +100,16 @@ class AsyncCacheManager:
             # lazy init sync client + pool, reuse across calls
             if self._redis_client_sync is None:
                 if self._sync_pool is None:
-                    self._sync_pool = redis_sync.ConnectionPool(
-                        host=self.redis_host,
-                        port=int(self.redis_port) if isinstance(self.redis_port, str) else self.redis_port,
-                        db=self.redis_db,
-                        decode_responses=True,
-                    )
+                    pool_kwargs = {
+                        "host": self.redis_host,
+                        "port": int(self.redis_port) if isinstance(self.redis_port, str) else self.redis_port,
+                        "db": self.redis_db,
+                        "decode_responses": True,
+                    }
+                    if self.redis_password:
+                        pool_kwargs["password"] = self.redis_password
+                        
+                    self._sync_pool = redis_sync.ConnectionPool(**pool_kwargs)
                 self._redis_client_sync = redis_sync.Redis(connection_pool=self._sync_pool)
             client = self._redis_client_sync
             key = self._generate_cache_key(namespace, keys)
@@ -132,5 +141,8 @@ class AsyncCacheManager:
 
 async_cache_manager = AsyncCacheManager()
 
-def get_cache_manager() -> AsyncCacheManager:
+async def get_cache_manager() -> AsyncCacheManager:
+    """获取缓存管理器实例，如果未连接则自动连接"""
+    if not async_cache_manager.redis_client:
+        await async_cache_manager.connect_redis()
     return async_cache_manager

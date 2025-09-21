@@ -38,11 +38,12 @@ def check_db_connection():
     test_code = """
 from src.db_util.db import sessionmanager
 from src.config.auth_config import settings
+from sqlalchemy import text
 try:
     import asyncio
     async def test_connection():
-        async with sessionmanager.connect() as conn:
-            result = await conn.execute('SELECT VERSION()')
+        async with sessionmanager.session() as db:
+            result = await db.execute(text('SELECT VERSION()'))
             version = result.fetchone()[0]
             print(f'✅ 数据库连接成功，MySQL版本: {version}')
         return True
