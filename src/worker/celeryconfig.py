@@ -4,7 +4,9 @@ from celery import Celery
 from kombu import Exchange, Queue
 import redis
 from ..config.auth_config import settings
-from celery_beat_schedule import beat_schedule, timezone
+# 简化的调度配置
+beat_schedule = {}
+timezone = "UTC"
 
 # Redis配置
 redis_client = redis.Redis(

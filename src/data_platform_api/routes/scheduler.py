@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import desc, select
 from typing import Optional
+from uuid import UUID
 from ...db_util.db import get_async_session
 from ...user_manage.models.user import User
 from ..models.task import Task, TaskSchedule, ScheduleType
@@ -22,7 +23,8 @@ async def create_schedule(
 ):
     """创建任务调度"""
     # 检查任务是否存在
-    result = await db.execute(select(Task).where(Task.id == schedule_data.task_id))
+    task_id_str = str(schedule_data.task_id)
+    result = await db.execute(select(Task).where(Task.id == task_id_str))
     task = result.scalar_one_or_none()
     
     if not task:
@@ -75,12 +77,14 @@ async def create_schedule(
 
 @router.get("/task/{task_id}", response_model=Response)
 async def get_task_schedules(
-    task_id: int,
+    task_id: UUID,
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_active_user)
 ):
     """获取任务的调度配置"""
-    result = await db.execute(select(Task).where(Task.id == task_id))
+    # 将UUID转换为字符串进行查询
+    task_id_str = str(task_id)
+    result = await db.execute(select(Task).where(Task.id == task_id_str))
     task = result.scalar_one_or_none()
     
     if not task:
@@ -98,8 +102,8 @@ async def get_task_schedules(
     
     result = await db.execute(
         select(TaskSchedule)
-        .where(TaskSchedule.task_id == task_id)
-        .order_by(desc(TaskSchedule.created_at))
+        .where(TaskSchedule.task_id == task_id_str)
+        .order_by(desc(TaskSchedule.create_time))
     )
     schedules = result.scalars().all()
     

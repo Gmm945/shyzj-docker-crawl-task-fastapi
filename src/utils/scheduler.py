@@ -45,8 +45,11 @@ class ScheduleManager:
             # 检查是否已经在事件循环中
             try:
                 loop = asyncio.get_running_loop()
-                # 如果已经在事件循环中，创建一个任务
-                asyncio.create_task(self._load_schedules_async())
+                # 如果已经在事件循环中，使用 run_in_executor 避免循环冲突
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, self._load_schedules_async())
+                    future.result()
             except RuntimeError:
                 # 如果没有运行的事件循环，使用 asyncio.run
                 asyncio.run(self._load_schedules_async())

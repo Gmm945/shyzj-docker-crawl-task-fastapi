@@ -187,13 +187,15 @@ async def get_task(
 
 @router.put("/{task_id}")
 async def update_task(
-    task_id: int,
+    task_id: UUID,
     task_data: TaskUpdate,
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_active_user)
 ):
     """更新任务"""
-    result = await db.execute(select(Task).where(Task.id == task_id))
+    # 将UUID转换为字符串进行查询
+    task_id_str = str(task_id)
+    result = await db.execute(select(Task).where(Task.id == task_id_str))
     task = result.scalar_one_or_none()
     
     if not task:
@@ -239,12 +241,14 @@ async def update_task(
 
 @router.delete("/{task_id}")
 async def delete_task(
-    task_id: int,
+    task_id: UUID,
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_active_user)
 ):
     """删除任务"""
-    result = await db.execute(select(Task).where(Task.id == task_id))
+    # 将UUID转换为字符串进行查询
+    task_id_str = str(task_id)
+    result = await db.execute(select(Task).where(Task.id == task_id_str))
     task = result.scalar_one_or_none()
     
     if not task:
@@ -281,12 +285,14 @@ async def delete_task(
 
 @router.post("/{task_id}/execute")
 async def execute_task_now(
-    task_id: int,
+    task_id: UUID,
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_active_user)
 ):
     """立即执行任务"""
-    result = await db.execute(select(Task).where(Task.id == task_id))
+    # 将UUID转换为字符串进行查询
+    task_id_str = str(task_id)
+    result = await db.execute(select(Task).where(Task.id == task_id_str))
     task = result.scalar_one_or_none()
     
     if not task:
@@ -345,7 +351,7 @@ async def execute_task_now(
 
 @router.post("/{task_id}/stop")
 async def stop_task(
-    task_id: int,
+    task_id: UUID,
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_active_user)
 ):

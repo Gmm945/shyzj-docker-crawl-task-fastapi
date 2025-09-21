@@ -18,7 +18,9 @@ async def create_task(db: AsyncSession, task: Task):
 
 async def get_task_by_id(db: AsyncSession, task_id: UUID):
     """根据ID获取任务"""
-    statement = select(Task).where(and_(Task.id == task_id, Task.is_delete == False))
+    # 将UUID转换为字符串进行查询，因为数据库中存储的是字符串
+    task_id_str = str(task_id)
+    statement = select(Task).where(and_(Task.id == task_id_str, Task.is_delete == False))
     result = await db.execute(statement)
     return result.scalars().first()
 

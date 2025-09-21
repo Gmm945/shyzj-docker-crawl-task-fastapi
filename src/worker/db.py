@@ -9,7 +9,7 @@ load_dotenv()
 
 # 数据库配置
 # 从环境变量获取完整的数据库连接字符串
-DATABASE_URL = os.getenv('DATABASE_URL', 'mysql+pymysql://root:password@localhost:3306/data_platform')
+DATABASE_URL = os.getenv('DATABASE_URL', 'mysql+pymysql://app_user:123456@localhost:3306/data_platform')
 
 # 如果URL包含aiomysql，替换为pymysql（因为worker使用同步连接）
 if 'mysql+aiomysql://' in DATABASE_URL:

@@ -30,9 +30,9 @@ async def lifespan(app: FastAPI):
     logger.info("数据采集任务管理系统启动中...")
     
     try:
-        # 启动任务调度器
-        schedule_manager.start()
-        logger.info("任务调度器启动完成")
+        # 暂时禁用任务调度器启动，避免异步循环冲突
+        # schedule_manager.start()
+        # logger.info("任务调度器启动完成")
         
         logger.info("数据采集任务管理系统启动完成")
         
@@ -45,9 +45,9 @@ async def lifespan(app: FastAPI):
     # 关闭时
     logger.info("数据采集任务管理系统关闭中...")
     try:
-        # 停止任务调度器
-        schedule_manager.stop()
-        logger.info("任务调度器已停止")
+        # 暂时禁用任务调度器停止
+        # schedule_manager.stop()
+        # logger.info("任务调度器已停止")
         
         # 关闭数据库连接
         if sessionmanager._engine is not None:

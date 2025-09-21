@@ -199,6 +199,10 @@ class SimpleCrawler:
             runtime = datetime.now() - self.progress.start_time
             progress_dict['runtime_seconds'] = runtime.total_seconds()
         
+        # 转换datetime对象为字符串
+        if 'start_time' in progress_dict and progress_dict['start_time']:
+            progress_dict['start_time'] = progress_dict['start_time'].isoformat()
+        
         return progress_dict
 
 class HeartbeatClient:

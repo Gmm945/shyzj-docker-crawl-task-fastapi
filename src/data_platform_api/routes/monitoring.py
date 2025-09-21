@@ -247,8 +247,8 @@ async def get_monitoring_statistics(
         # 统计指定时间范围内的执行记录
         result = await db.execute(
             select(TaskExecution).where(
-                TaskExecution.created_at >= start_date,
-                TaskExecution.created_at <= end_date
+                TaskExecution.create_time >= start_date,
+                TaskExecution.create_time <= end_date
             )
         )
         executions = result.scalars().all()

@@ -76,6 +76,7 @@ class AuthManager:
     
     def __init__(self, client: TestHTTPClient):
         self.client = client
+        self.admin_token = None
     
     async def init_admin(self) -> bool:
         """初始化管理员账户"""
@@ -117,7 +118,8 @@ class AuthManager:
             
             if response.status_code == 200:
                 token_data = response.json()
-                self.client.access_token = token_data["access_token"]
+                self.admin_token = token_data["access_token"]
+                self.client.access_token = self.admin_token
                 logger.success("✅ 管理员登录成功")
                 return True
             else:

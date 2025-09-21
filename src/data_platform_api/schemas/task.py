@@ -1,6 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from uuid import UUID
 from ..models.task import TaskType, TaskStatus, ExecutionStatus, ScheduleType
 from ...common.schemas.base import PaginationModel
 
@@ -92,19 +93,19 @@ class ScheduleConfig(BaseModel):
 
 
 class TaskScheduleCreate(BaseModel):
-    task_id: int
+    task_id: UUID
     schedule_type: ScheduleType
     schedule_config: Dict[str, Any]
 
 
 class TaskScheduleResponse(BaseModel):
-    id: int
-    task_id: int
+    id: str
+    task_id: str
     schedule_type: ScheduleType
     schedule_config: Dict[str, Any]
     is_active: bool
     next_run_time: Optional[datetime] = None
-    created_at: datetime
+    create_time: datetime
     
     class Config:
         from_attributes = True
