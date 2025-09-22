@@ -21,7 +21,7 @@ RUN pdm install --check --prod --no-editable
 FROM python:$PYTHON_BASE
 
 RUN apt-get update \
-  && apt-get install -y gcc libffi-dev libssl-dev default-mysql-client openssh-client curl \
+  && apt-get install -y gcc libffi-dev libssl-dev \
   && apt-get clean \
   && rm -rf /var/lib/apt/lists/*
 # retrieve packages from build stage
@@ -31,5 +31,11 @@ ENV PATH="/project/.venv/bin:$PATH"
 COPY src /project/src
 WORKDIR /project
 
-# set command/entrypoint, 
+# 创建日志目录
+RUN mkdir -p /project/logs
+
+# 暴露端口（web和flower需要）
+EXPOSE 8000 5555
+
+# 默认启动命令（可通过docker-compose的command覆盖）
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]

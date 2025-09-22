@@ -235,18 +235,27 @@ def upload_config_to_remote_machine(local_config_file: str, execution_id: UUID) 
 
 
 def start_docker_task_container(execution_id: UUID, docker_image: str, config_path: str, 
-                               additional_volumes: Optional[Dict[str, str]] = None) -> str:
+                            additional_volumes: Optional[Dict[str, str]] = None) -> str:
     """启动Docker任务容器"""
     try:
         container_name = f"task-{execution_id}"
         
-        # 基础Docker运行命令
-        docker_command = [
-            "ssh", f"root@{settings.DOCKER_HOST_IP}",
-            "docker", "run", "-d",
-            "--name", container_name,
-            "--rm",  # 自动清理容器
-        ]
+        # 检查是否为本地环境（DOCKER_HOST_IP为localhost或127.0.0.1）
+        if settings.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]:
+            # 本地环境，直接使用docker命令
+            docker_command = [
+                "docker", "run", "-d",
+                "--name", container_name,
+                "--rm",  # 自动清理容器
+            ]
+        else:
+            # 远程环境，使用SSH
+            docker_command = [
+                "ssh", f"root@{settings.DOCKER_HOST_IP}",
+                "docker", "run", "-d",
+                "--name", container_name,
+                "--rm",  # 自动清理容器
+            ]
         
         # 添加配置文件挂载
         docker_command.extend([

@@ -59,7 +59,7 @@ async def add_task(
             detail="任务名称已存在"
         )
     
-    # 创建任务
+    # 创建任务（直接激活）
     db_task = Task(
         task_name=req_body.task_name,
         task_type=req_body.task_type,
@@ -69,7 +69,7 @@ async def add_task(
         extract_config=[config.model_dump() for config in req_body.extract_config] if req_body.extract_config else None,
         description=req_body.description,
         creator_id=user.id,
-        status=TaskStatus.DRAFT
+        status=TaskStatus.ACTIVE  # 直接创建为激活状态
     )
     
     new_task = await create_task(db, db_task)
@@ -308,11 +308,11 @@ async def execute_task_now(
             detail="无权执行此任务"
         )
     
-    # 检查任务状态
-    if task.status != TaskStatus.ACTIVE:
+    # 检查任务状态（允许草稿和激活状态执行）
+    if task.status not in [TaskStatus.ACTIVE, TaskStatus.DRAFT]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="只能执行已激活的任务"
+            detail="只能执行草稿或已激活的任务"
         )
     
     # 检查是否已有正在执行的任务
@@ -448,3 +448,73 @@ async def get_task_executions(
         "size": limit,
         "pages": (total + limit - 1) // limit
     })
+
+@router.post("/{task_id}/activate")
+async def activate_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """激活任务"""
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="任务不存在"
+        )
+    
+    # 非管理员只能激活自己的任务
+    if not current_user.is_admin and task.creator_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权激活此任务"
+        )
+    
+    # 检查任务状态
+    if task.status == TaskStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="任务已激活"
+        )
+    
+    # 更新任务状态为激活
+    await update_task_status(db, task_id, TaskStatus.ACTIVE)
+    
+    return ResponseModel(message="任务激活成功")
+
+@router.post("/{task_id}/deactivate")
+async def deactivate_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """停用任务"""
+    result = await db.execute(select(Task).where(Task.id == task_id))
+    task = result.scalar_one_or_none()
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="任务不存在"
+        )
+    
+    # 非管理员只能停用自己的任务
+    if not current_user.is_admin and task.creator_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权停用此任务"
+        )
+    
+    # 检查任务状态
+    if task.status != TaskStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="任务未激活"
+        )
+    
+    # 更新任务状态为停用
+    await update_task_status(db, task_id, TaskStatus.PAUSED)
+    
+    return ResponseModel(message="任务已停用")

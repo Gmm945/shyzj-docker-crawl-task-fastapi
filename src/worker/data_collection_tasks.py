@@ -13,7 +13,10 @@ from .db_tasks import (
     get_task_by_id,
     get_user_by_id,
     update_task_status,
+    make_sync_session,
 )
+from ..data_platform_api.models.task import Task, TaskExecution
+from ..user_manage.models.user import User
 from .file_tasks import (
     cleanup_task_workspace,
     create_task_workspace,
@@ -38,35 +41,44 @@ def execute_data_collection_task_impl(
     try:
         self.update_status(0, "PENDING", "开始执行数据采集任务", namespace=namespace)
         
-        # 获取任务信息
-        task = get_task_by_id(UUID(task_id))
-        if not task:
-            raise ValueError(f"任务不存在: {task_id}")
+        # 在同一个会话中获取任务和执行者信息
+        with make_sync_session() as session:
+            # 重新查询任务以确保在会话中
+            task_in_session = session.query(Task).filter(Task.id == task_id).first()
+            if not task_in_session:
+                raise ValueError(f"任务不存在: {task_id}")
             
-        # 获取执行者信息
-        executor = get_user_by_id(task.creator_id)
-        if not executor:
-            raise ValueError(f"执行者不存在: {task.creator_id}")
+            # 获取执行者信息
+            executor = session.query(User).filter(User.id == task_in_session.creator_id).first()
+            if not executor:
+                raise ValueError(f"执行者不存在: {task_in_session.creator_id}")
             
-        # 创建任务执行记录
-        execution_data = {
-            "task_id": UUID(task_id),
-            "executor_id": task.creator_id,
-            "execution_name": f"执行任务: {task.task_name}",
-            "status": "running",
-            "start_time": None,
-            "end_time": None,
-            "result_data": None,
-            "error_log": None,
-        }
-        
-        if not save_task_execution_to_db(execution_data):
-            raise Exception("保存任务执行记录失败")
+            # 提取任务信息（在会话内获取所有需要的数据）
+            task_name = task_in_session.task_name
+            task_type = task_in_session.task_type.value
+            creator_id = task_in_session.creator_id
+            
+            # 创建任务执行记录
+            execution_data = {
+                "task_id": task_id,
+                "executor_id": creator_id,
+                "execution_name": f"执行任务: {task_name}",
+                "status": "running",
+                "start_time": None,
+                "end_time": None,
+                "result_data": None,
+                "error_log": None,
+            }
+            
+            # 保存任务执行记录
+            task_execution = TaskExecution(**execution_data)
+            session.add(task_execution)
+            session.commit()
             
         self.update_status(10, "PROGRESS", "任务执行记录已创建", namespace=namespace)
         
         # 创建任务工作空间
-        workspace_path = create_task_workspace(task_id, execution_id)
+        workspace_path = create_task_workspace(UUID(execution_id))
         self.update_status(20, "PROGRESS", "任务工作空间已创建", namespace=namespace)
         
         # 处理任务配置
@@ -77,14 +89,14 @@ def execute_data_collection_task_impl(
             self.update_status(30, "PROGRESS", "任务配置文件已生成", namespace=namespace)
         
         # 根据任务类型执行不同的逻辑
-        if task.task_type.value == "docker-crawl":
-            result = _execute_crawler_task_with_docker(task, execution_id, config_data)
-        elif task.task_type.value == "api":
-            result = _execute_api_task_with_docker(task, execution_id, config_data)
-        elif task.task_type.value == "database":
-            result = _execute_database_task_with_docker(task, execution_id, config_data)
+        if task_type == "docker-crawl":
+            result = _execute_crawler_task_with_docker(task_name, execution_id, config_data)
+        elif task_type == "api":
+            result = _execute_api_task_with_docker(task_name, execution_id, config_data)
+        elif task_type == "database":
+            result = _execute_database_task_with_docker(task_name, execution_id, config_data)
         else:
-            raise ValueError(f"不支持的任务类型: {task.task_type}")
+            raise ValueError(f"不支持的任务类型: {task_type}")
             
         self.update_status(80, "PROGRESS", "任务执行完成，正在保存结果", namespace=namespace)
         
@@ -102,7 +114,7 @@ def execute_data_collection_task_impl(
             )
             
             # 更新任务状态
-            update_task_status(UUID(task_id), "completed")
+            update_task_status(task_id, "completed")
             
         self.update_status(100, "SUCCESS", "数据采集任务执行成功", namespace=namespace)
         
@@ -124,22 +136,22 @@ def execute_data_collection_task_impl(
         try:
             update_task_execution_status(
                 UUID(execution_id),
-                "failed",
+                "stopped",
                 result_data=None,
                 error_log=str(e)
             )
-            update_task_status(UUID(task_id), "failed")
+            update_task_status(task_id, "stopped")
         except Exception as update_error:
             logger.error(f"更新任务状态失败: {update_error}")
         
         raise
 
 
-def _execute_crawler_task_with_docker(task, execution_id: str, config_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _execute_crawler_task_with_docker(task_name: str, execution_id: str, config_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """使用Docker执行爬虫任务"""
     container_id = None
     try:
-        logger.info(f"使用Docker执行爬虫任务: {task.task_name}")
+        logger.info(f"使用Docker执行爬虫任务: {task_name}")
         
         # 验证配置
         if config_data:
@@ -271,11 +283,11 @@ def _execute_crawler_task_with_docker(task, execution_id: str, config_data: Opti
             pass
 
 
-def _execute_api_task_with_docker(task, execution_id: str, config_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _execute_api_task_with_docker(task_name: str, execution_id: str, config_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """使用Docker执行API任务"""
     container_id = None
     try:
-        logger.info(f"使用Docker执行API任务: {task.task_name}")
+        logger.info(f"使用Docker执行API任务: {task_name}")
         
         # 验证配置
         if config_data:
@@ -351,11 +363,11 @@ def _execute_api_task_with_docker(task, execution_id: str, config_data: Optional
             pass
 
 
-def _execute_database_task_with_docker(task, execution_id: str, config_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def _execute_database_task_with_docker(task_name: str, execution_id: str, config_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """使用Docker执行数据库任务"""
     container_id = None
     try:
-        logger.info(f"使用Docker执行数据库任务: {task.task_name}")
+        logger.info(f"使用Docker执行数据库任务: {task_name}")
         
         # 验证配置
         if config_data:

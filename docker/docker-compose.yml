@@ -6,7 +6,9 @@ x-logging: &default-logging
       max-file: "3"
 
 x-image: &image-settings
-  image: data-platform:latest
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
 
 x-common: &common-settings
   restart: unless-stopped
@@ -15,17 +17,15 @@ x-common: &common-settings
 services:  
   data-platform-api:
     <<: *common-settings
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.web
     container_name: data-platform-api
     environment:
-      - DATABASE_URL=${DATABASE_URL:-mysql+aiomysql://root:password@localhost:3306/data_platform}
-      - REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://localhost:6379/1}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://localhost:6379/2}
+      - DATABASE_URL=${DATABASE_URL:-mysql+aiomysql://root:123456@mysql80:3306/data_platform}
+      - REDIS_URL=${REDIS_URL:-redis://redis_5.0.14:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis_5.0.14:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis_5.0.14:6379/2}
       - SECRET_KEY=${SECRET_KEY:-data-platform-secret-key}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DOCKER_HOST_IP=${DOCKER_HOST_IP:-localhost}
     command: uvicorn src.main:app --host 0.0.0.0 --port 8000 --workers 1
     ports:
       - "8000:8000"
@@ -36,17 +36,15 @@ services:
 
   data-platform-worker:
     <<: *common-settings
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.worker
     container_name: data-platform-worker
     environment:
-      - DATABASE_URL=${DATABASE_URL:-mysql+aiomysql://root:password@localhost:3306/data_platform}
-      - REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://localhost:6379/1}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://localhost:6379/2}
+      - DATABASE_URL=${DATABASE_URL:-mysql+aiomysql://root:123456@mysql80:3306/data_platform}
+      - REDIS_URL=${REDIS_URL:-redis://redis_5.0.14:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis_5.0.14:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis_5.0.14:6379/2}
       - SECRET_KEY=${SECRET_KEY:-data-platform-secret-key}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DOCKER_HOST_IP=${DOCKER_HOST_IP:-localhost}
     command: celery -A src.worker.main worker -Q task_execution,docker_management,monitoring -l info --concurrency=4
     networks:
       - server-network
@@ -56,20 +54,35 @@ services:
 
   data-platform-flower:
     <<: *common-settings
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile.flower
     container_name: data-platform-flower
     environment:
-      - DATABASE_URL=${DATABASE_URL:-mysql+aiomysql://root:password@localhost:3306/data_platform}
-      - REDIS_URL=${REDIS_URL:-redis://localhost:6379/0}
-      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://localhost:6379/1}
-      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://localhost:6379/2}
+      - DATABASE_URL=${DATABASE_URL:-mysql+aiomysql://root:123456@mysql80:3306/data_platform}
+      - REDIS_URL=${REDIS_URL:-redis://redis_5.0.14:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis_5.0.14:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis_5.0.14:6379/2}
       - SECRET_KEY=${SECRET_KEY:-data-platform-secret-key}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DOCKER_HOST_IP=${DOCKER_HOST_IP:-localhost}
     command: celery -A src.worker.main flower --port=5555 --basic_auth=admin:admin123
     ports:
       - "5555:5555"
+    networks:
+      - server-network
+    volumes:
+      - ./logs:/project/logs
+
+  data-platform-beat:
+    <<: *common-settings
+    container_name: data-platform-beat
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-mysql+aiomysql://root:123456@mysql80:3306/data_platform}
+      - REDIS_URL=${REDIS_URL:-redis://redis_5.0.14:6379/0}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL:-redis://redis_5.0.14:6379/1}
+      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND:-redis://redis_5.0.14:6379/2}
+      - SECRET_KEY=${SECRET_KEY:-data-platform-secret-key}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DOCKER_HOST_IP=${DOCKER_HOST_IP:-localhost}
+    command: celery -A src.worker.main beat --loglevel=info
     networks:
       - server-network
     volumes:

@@ -82,7 +82,7 @@ def cleanup_old_executions(days: int = 7) -> int:
         return 0
 
 
-def get_task_by_id(task_id: UUID) -> Optional[Task]:
+def get_task_by_id(task_id: str) -> Optional[Task]:
     """根据ID获取任务"""
     try:
         with make_sync_session() as session:
@@ -104,7 +104,7 @@ def get_user_by_id(user_id: UUID) -> Optional[User]:
         return None
 
 
-def update_task_status(task_id: UUID, status: str) -> bool:
+def update_task_status(task_id: str, status: str) -> bool:
     """更新任务状态"""
     try:
         with make_sync_session() as session:
