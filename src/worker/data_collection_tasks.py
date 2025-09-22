@@ -107,8 +107,8 @@ def execute_data_collection_task_impl(
             
         self.update_status(100, "SUCCESS", "数据采集任务执行成功", namespace=namespace)
         
-        # 清理工作空间
-        cleanup_task_workspace(task_id, execution_id)
+        # 清理工作空间（仅按执行ID）
+        cleanup_task_workspace(UUID(execution_id))
         
         return {
             "success": True,

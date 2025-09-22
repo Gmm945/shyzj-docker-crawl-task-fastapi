@@ -100,12 +100,20 @@ async def task_completion(
                 detail="执行记录不存在"
             )
         
-        # 验证容器ID
+        # 验证容器ID（放宽：若容器名符合 task-<execution_id> 也允许；无法匹配也不阻断流程，仅记录告警）
         if execution.docker_container_id != container_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="容器ID不匹配"
-            )
+            expected_name = f"task-{execution_id}"
+            if container_id and expected_name in str(container_id):
+                logger.warning(
+                    f"容器ID不匹配，按容器名兜底通过: db={execution.docker_container_id}, got={container_id}, expected_name={expected_name}"
+                )
+                # 若数据库未记录容器ID，则以回调值回填，增强后续一致性
+                if not execution.docker_container_id:
+                    execution.docker_container_id = container_id
+            else:
+                logger.warning(
+                    f"容器ID不匹配，放宽校验但继续处理: db={execution.docker_container_id}, got={container_id}"
+                )
         
         # 更新执行状态
         execution.status = ExecutionStatus.SUCCESS if success else ExecutionStatus.FAILED

@@ -252,15 +252,19 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
             docker_command = [
                 "docker", "run", "-d",
                 "--name", container_name,
+                "--hostname", container_name,
                 # 是否自动清理容器由配置控制
                 *( ["--rm"] if settings.DOCKER_AUTO_REMOVE else [] ),
             ]
+            # 让容器内可访问宿主：host.docker.internal（Linux 需以下参数；mac/Win原生支持）
+            docker_command.extend(["--add-host", "host.docker.internal:host-gateway"])
         else:
             # 远程环境，使用SSH
             docker_command = [
                 "ssh", f"root@{settings.DOCKER_HOST_IP}",
                 "docker", "run", "-d",
                 "--name", container_name,
+                "--hostname", container_name,
                 *( ["--rm"] if settings.DOCKER_AUTO_REMOVE else [] ),
             ]
         
@@ -278,8 +282,12 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
         if settings.API_BASE_URL:
             api_base = settings.API_BASE_URL.rstrip('/')
         else:
-            host = settings.DOCKER_HOST_IP if settings.DOCKER_HOST_IP not in ["0.0.0.0"] else "127.0.0.1"
-            api_base = f"http://{host}:{settings.API_PORT}"
+            # 本地默认使用 host.docker.internal，确保容器内能访问宿主Web
+            if settings.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]:
+                api_base = f"http://host.docker.internal:{settings.API_PORT}"
+            else:
+                host = settings.DOCKER_HOST_IP
+                api_base = f"http://{host}:{settings.API_PORT}"
 
         # 添加环境变量
         docker_command.extend([

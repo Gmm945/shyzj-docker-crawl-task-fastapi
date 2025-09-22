@@ -20,6 +20,12 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 from dataclasses import dataclass, asdict
 import logging
+from requests.adapters import HTTPAdapter
+try:
+    # urllib3 v2
+    from urllib3.util.retry import Retry
+except Exception:  # pragma: no cover
+    from urllib3.util import Retry
 
 # 配置日志
 logging.basicConfig(
@@ -56,6 +62,23 @@ class SimpleCrawler:
         self.session.headers.update({
             'User-Agent': self.config.get('user_agent', 'Mozilla/5.0 (compatible; DataCollector/1.0)')
         })
+        # 配置重试（对 5xx/429/连接错误做指数退避重试）
+        retry_total = int(os.getenv('CRAWLER_RETRY_TOTAL', self.config.get('retry_total', 3)))
+        backoff = float(os.getenv('CRAWLER_RETRY_BACKOFF', self.config.get('retry_backoff', 1)))
+        status_list = [429, 500, 502, 503, 504]
+        retry = Retry(
+            total=retry_total,
+            connect=retry_total,
+            read=retry_total,
+            status=retry_total,
+            backoff_factor=backoff,
+            status_forcelist=status_list,
+            allowed_methods={"GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"},
+            raise_on_status=False,
+        )
+        adapter = HTTPAdapter(max_retries=retry)
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
         
         self.timeout = self.config.get('timeout', 30)
         self.delay = self.config.get('delay', 1)
@@ -270,7 +293,10 @@ class HeartbeatClient:
             if response.status_code == 200:
                 logger.info("任务完成通知发送成功")
             else:
-                logger.warning(f"任务完成通知发送失败: {response.status_code}")
+                try:
+                    logger.warning(f"任务完成通知发送失败: {response.status_code}, body={response.text}")
+                except Exception:
+                    logger.warning(f"任务完成通知发送失败: {response.status_code}")
                 
         except Exception as e:
             logger.error(f"发送任务完成通知异常: {e}")
