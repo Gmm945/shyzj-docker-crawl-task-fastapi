@@ -6,7 +6,7 @@ import redis
 from ..config.auth_config import settings
 # 简化的调度配置
 beat_schedule = {}
-timezone = "UTC"
+timezone = settings.TIMEZONE or "Asia/Shanghai"
 
 # Redis配置
 redis_client = redis.Redis(
@@ -41,7 +41,7 @@ celery_app.conf.update(
     # worker_pool='solo',
     worker_pool='prefork',
     timezone=timezone,
-    enable_utc=True,
+    enable_utc=False,
     beat_schedule=beat_schedule,
 )
 

@@ -3,6 +3,7 @@ import json
 import shutil
 import subprocess
 from typing import Dict, Any, Optional
+import socket
 from uuid import UUID
 from loguru import logger
 from datetime import datetime
@@ -198,6 +199,11 @@ def validate_task_config(config_data: Dict[str, Any]) -> tuple[bool, Optional[st
 def upload_config_to_remote_machine(local_config_file: str, execution_id: UUID) -> str:
     """上传配置文件到远程执行机器"""
     try:
+        # 如果是本地Docker主机，直接返回本地配置文件路径（无需SSH）
+        if settings.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]:
+            logger.info("本地环境检测到，跳过SSH上传，使用本地配置文件")
+            return local_config_file
+
         # 远程机器上的配置目录
         remote_config_dir = f"/tmp/task_configs/{execution_id}"
         remote_config_file = f"{remote_config_dir}/config.json"
@@ -246,7 +252,8 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
             docker_command = [
                 "docker", "run", "-d",
                 "--name", container_name,
-                "--rm",  # 自动清理容器
+                # 是否自动清理容器由配置控制
+                *( ["--rm"] if settings.DOCKER_AUTO_REMOVE else [] ),
             ]
         else:
             # 远程环境，使用SSH
@@ -254,7 +261,7 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
                 "ssh", f"root@{settings.DOCKER_HOST_IP}",
                 "docker", "run", "-d",
                 "--name", container_name,
-                "--rm",  # 自动清理容器
+                *( ["--rm"] if settings.DOCKER_AUTO_REMOVE else [] ),
             ]
         
         # 添加配置文件挂载
@@ -267,11 +274,25 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
             for host_path, container_path in additional_volumes.items():
                 docker_command.extend(["-v", f"{host_path}:{container_path}"])
         
+        # 计算 API_BASE_URL（容器回调用）
+        if settings.API_BASE_URL:
+            api_base = settings.API_BASE_URL.rstrip('/')
+        else:
+            host = settings.DOCKER_HOST_IP if settings.DOCKER_HOST_IP not in ["0.0.0.0"] else "127.0.0.1"
+            api_base = f"http://{host}:{settings.API_PORT}"
+
         # 添加环境变量
         docker_command.extend([
             "-e", f"TASK_EXECUTION_ID={execution_id}",
-            "-e", "CONFIG_PATH=/app/config/config.json"
+            "-e", "CONFIG_PATH=/app/config/config.json",
+            "-e", f"API_BASE_URL={api_base}"
         ])
+        
+        # 端口映射：从配置的端口范围中选择可用端口
+        host_port = _allocate_remote_port()
+        container_port = settings.CONTAINER_SERVICE_PORT
+        if host_port and container_port:
+            docker_command.extend(["-p", f"{host_port}:{container_port}"])
         
         # 添加Docker镜像
         docker_command.append(docker_image)
@@ -282,6 +303,17 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
         if result.returncode == 0:
             container_id = result.stdout.strip()
             logger.info(f"Docker task container started: {container_name} ({container_id})")
+            # 将映射端口写入执行记录的结果数据中（避免迁移）
+            try:
+                from .db_tasks import save_task_result_data
+                access = {
+                    "host": settings.DOCKER_HOST_IP,
+                    "port": host_port,
+                    "url": f"http://{settings.DOCKER_HOST_IP}:{host_port}"
+                }
+                save_task_result_data(execution_id, {"access": access})
+            except Exception as _:
+                pass
             return container_id
         else:
             logger.error(f"Failed to start Docker container: {result.stderr}")
@@ -293,6 +325,31 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
     except Exception as e:
         logger.error(f"Failed to start Docker container: {e}")
         raise
+
+
+def _allocate_remote_port() -> Optional[int]:
+    """在远程或本机分配可用端口。
+    远程场景下无法直接检测远端端口占用，采用保守策略：
+    - 若 DOCKER_HOST_IP 是本机/回环，则实际检测端口可用性
+    - 否则直接按范围顺序返回第一个端口（由 Docker 失败时重试）
+    """
+    start = settings.PORT_RANGE_START
+    end = settings.PORT_RANGE_END
+    host = settings.DOCKER_HOST_IP
+    local_ips = ["localhost", "127.0.0.1", "0.0.0.0"]
+    if host in local_ips:
+        for port in range(start, end + 1):
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                try:
+                    s.bind(("127.0.0.1", port))
+                    return port
+                except OSError:
+                    continue
+        return None
+    else:
+        # 远程主机：直接取范围第一个端口
+        return start
 
 
 def stop_docker_task_container(container_id: str) -> bool:
@@ -339,10 +396,14 @@ def cleanup_remote_config_files(execution_id: UUID) -> bool:
 def get_docker_container_logs(container_id: str, lines: int = 100) -> Optional[str]:
     """获取Docker容器日志"""
     try:
-        logs_command = [
-            "ssh", f"root@{settings.DOCKER_HOST_IP}",
-            "docker", "logs", "--tail", str(lines), container_id
-        ]
+        # 本地环境直接使用docker命令，远程环境使用SSH
+        if settings.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]:
+            logs_command = ["docker", "logs", "--tail", str(lines), container_id]
+        else:
+            logs_command = [
+                "ssh", f"root@{settings.DOCKER_HOST_IP}",
+                "docker", "logs", "--tail", str(lines), container_id
+            ]
         
         result = subprocess.run(logs_command, capture_output=True, text=True, timeout=30)
         
@@ -355,3 +416,34 @@ def get_docker_container_logs(container_id: str, lines: int = 100) -> Optional[s
     except Exception as e:
         logger.error(f"Error getting container logs: {e}")
         return None
+
+
+def get_docker_container_status(container_id: str) -> Optional[dict]:
+    """获取Docker容器状态（本地优先，远程通过SSH）。
+    返回: {"exists": bool, "running": bool, "status": str}
+    """
+    try:
+        if settings.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]:
+            cmd = [
+                "docker", "inspect", "--format",
+                "{{.State.Status}}|{{.State.Running}}",
+                container_id,
+            ]
+        else:
+            cmd = [
+                "ssh", f"root@{settings.DOCKER_HOST_IP}",
+                "docker", "inspect", "--format",
+                "{{.State.Status}}|{{.State.Running}}",
+                container_id,
+            ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        if result.returncode != 0:
+            return {"exists": False, "running": False, "status": "not_found"}
+        status_str = result.stdout.strip()
+        parts = status_str.split("|")
+        status = parts[0] if parts else "unknown"
+        running = (parts[1].lower() == "true") if len(parts) > 1 else False
+        return {"exists": True, "running": running, "status": status}
+    except Exception as e:
+        logger.error(f"Get container status error: {e}")
+        return {"exists": False, "running": False, "status": "error"}

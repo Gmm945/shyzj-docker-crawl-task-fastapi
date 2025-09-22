@@ -29,7 +29,7 @@ engine = create_engine(
 )
 
 # 创建会话工厂
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, expire_on_commit=False)
 
 
 @contextmanager

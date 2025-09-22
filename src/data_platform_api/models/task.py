@@ -11,7 +11,6 @@ class TaskType(str, enum.Enum):
 
 
 class TaskStatus(str, enum.Enum):
-    DRAFT = "draft"
     ACTIVE = "active" 
     PAUSED = "paused"
     STOPPED = "stopped"
@@ -39,7 +38,7 @@ class Task(BaseModel):
     
     task_name = Column(String(200), nullable=False, comment="任务名称")
     task_type = Column(Enum(TaskType), nullable=False, comment="任务类型")
-    status = Column(Enum(TaskStatus), default=TaskStatus.DRAFT, comment="任务状态")
+    status = Column(Enum(TaskStatus), default=TaskStatus.ACTIVE, comment="任务状态")
     
     # 爬虫配置
     base_url = Column(Text, nullable=True, comment="基础URL")
@@ -79,6 +78,11 @@ class TaskExecution(BaseModel):
     
     # 心跳检测
     last_heartbeat = Column(DateTime, nullable=True, comment="最后心跳时间")
+
+    # 兼容字段：提供 created_at 作为 create_time 的别名，避免接口/排序冲突
+    @property
+    def created_at(self):
+        return self.create_time
 
 
 class TaskSchedule(BaseModel):

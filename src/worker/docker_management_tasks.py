@@ -27,13 +27,14 @@ def stop_docker_container_impl(self, container_id: str, namespace: str = "docker
         if result.returncode == 0:
             logger.info(f"容器停止成功: {container_id}")
             
-            # 删除容器
-            rm_command = [
-                "ssh", f"root@{settings.DOCKER_HOST_IP}",
-                "docker", "rm", container_id
-            ]
-            subprocess.run(rm_command, capture_output=True, text=True)
-            logger.info(f"容器删除成功: {container_id}")
+            # 删除容器由配置决定
+            if settings.DOCKER_REMOVE_ON_STOP:
+                rm_command = [
+                    "ssh", f"root@{settings.DOCKER_HOST_IP}",
+                    "docker", "rm", container_id
+                ]
+                subprocess.run(rm_command, capture_output=True, text=True)
+                logger.info(f"容器删除成功: {container_id}")
             
             self.update_status(100, "SUCCESS", "容器停止成功", namespace=namespace)
             return {"success": True, "message": "容器停止成功"}

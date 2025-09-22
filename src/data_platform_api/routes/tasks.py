@@ -214,7 +214,7 @@ async def update_task(
     # 检查是否有正在执行的任务
     running_result = await db.execute(
         select(TaskExecution).where(
-            TaskExecution.task_id == task_id,
+            TaskExecution.task_id == str(task_id),
             TaskExecution.status == ExecutionStatus.RUNNING
         )
     )
@@ -267,7 +267,7 @@ async def delete_task(
     # 检查是否有正在执行的任务
     running_result = await db.execute(
         select(TaskExecution).where(
-            TaskExecution.task_id == task_id,
+            TaskExecution.task_id == str(task_id),
             TaskExecution.status == ExecutionStatus.RUNNING
         )
     )
@@ -308,17 +308,17 @@ async def execute_task_now(
             detail="无权执行此任务"
         )
     
-    # 检查任务状态（允许草稿和激活状态执行）
-    if task.status not in [TaskStatus.ACTIVE, TaskStatus.DRAFT]:
+    # 检查任务状态（仅允许激活状态执行）
+    if task.status not in [TaskStatus.ACTIVE]:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="只能执行草稿或已激活的任务"
+            detail="只能执行已激活的任务"
         )
     
     # 检查是否已有正在执行的任务
     running_result = await db.execute(
         select(TaskExecution).where(
-            TaskExecution.task_id == task_id,
+            TaskExecution.task_id == str(task_id),
             TaskExecution.status == ExecutionStatus.RUNNING
         )
     )
@@ -330,12 +330,12 @@ async def execute_task_now(
             detail="任务已在执行中"
         )
     
-    # 创建执行记录
+    # 创建执行记录（避免包含非常规字符，使用固定前缀+时间戳+任务ID片段）
     timestamp = int(datetime.now().timestamp())
-    execution_name = f"{timestamp}_{task.task_name}"
+    execution_name = f"exec_{timestamp}_{str(task.id)[:8]}"
     
     db_execution = TaskExecution(
-        task_id=task_id,
+        task_id=str(task_id),
         executor_id=current_user.id,
         execution_name=execution_name,
         status=ExecutionStatus.PENDING
@@ -344,8 +344,19 @@ async def execute_task_now(
     await db.commit()
     await db.refresh(db_execution)
     
+    # 构建任务配置数据
+    config_data = {
+        "task_name": task.task_name,
+        "task_type": task.task_type.value,
+        "base_url": task.base_url,
+        "base_url_params": task.base_url_params,
+        "need_user_login": task.need_user_login,
+        "extract_config": task.extract_config,
+        "description": task.description,
+    }
+    
     # 提交到Celery执行
-    execute_data_collection_task.delay(str(task.id), str(db_execution.id))
+    execute_data_collection_task.delay(str(task.id), str(db_execution.id), config_data)
     
     return ResponseModel(message="任务已提交执行", data={"execution_id": db_execution.id})
 
@@ -400,14 +411,14 @@ async def stop_task(
 
 @router.get("/{task_id}/executions")
 async def get_task_executions(
-    task_id: int,
+    task_id: UUID,
     skip: int = 0,
     limit: int = 20,
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_active_user)
 ):
     """获取任务执行记录"""
-    result = await db.execute(select(Task).where(Task.id == task_id))
+    result = await db.execute(select(Task).where(Task.id == str(task_id)))
     task = result.scalar_one_or_none()
     
     if not task:
@@ -426,8 +437,8 @@ async def get_task_executions(
     # 获取执行记录
     executions_result = await db.execute(
         select(TaskExecution)
-        .where(TaskExecution.task_id == task_id)
-        .order_by(desc(TaskExecution.created_at))
+        .where(TaskExecution.task_id == str(task_id))
+        .order_by(desc(TaskExecution.create_time))
         .offset(skip)
         .limit(limit)
     )
@@ -435,7 +446,7 @@ async def get_task_executions(
     
     # 获取总数
     count_result = await db.execute(
-        select(TaskExecution).where(TaskExecution.task_id == task_id)
+        select(TaskExecution).where(TaskExecution.task_id == str(task_id))
     )
     total = len(count_result.scalars().all())
     
@@ -451,12 +462,12 @@ async def get_task_executions(
 
 @router.post("/{task_id}/activate")
 async def activate_task(
-    task_id: int,
+    task_id: UUID,
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_active_user)
 ):
     """激活任务"""
-    result = await db.execute(select(Task).where(Task.id == task_id))
+    result = await db.execute(select(Task).where(Task.id == str(task_id)))
     task = result.scalar_one_or_none()
     
     if not task:
@@ -480,18 +491,18 @@ async def activate_task(
         )
     
     # 更新任务状态为激活
-    await update_task_status(db, task_id, TaskStatus.ACTIVE)
+    await update_task_status(db, str(task_id), TaskStatus.ACTIVE)
     
     return ResponseModel(message="任务激活成功")
 
 @router.post("/{task_id}/deactivate")
 async def deactivate_task(
-    task_id: int,
+    task_id: UUID,
     db: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(get_current_active_user)
 ):
     """停用任务"""
-    result = await db.execute(select(Task).where(Task.id == task_id))
+    result = await db.execute(select(Task).where(Task.id == str(task_id)))
     task = result.scalar_one_or_none()
     
     if not task:
@@ -515,6 +526,6 @@ async def deactivate_task(
         )
     
     # 更新任务状态为停用
-    await update_task_status(db, task_id, TaskStatus.PAUSED)
+    await update_task_status(db, str(task_id), TaskStatus.PAUSED)
     
     return ResponseModel(message="任务已停用")

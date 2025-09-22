@@ -25,8 +25,9 @@ def save_task_execution_to_db(execution_data: dict) -> bool:
 def update_task_execution_status(execution_id: UUID, status: str, **kwargs) -> bool:
     """更新任务执行状态"""
     try:
+        exec_id_str = str(execution_id)
         with make_sync_session() as session:
-            execution = session.query(TaskExecution).filter(TaskExecution.id == execution_id).first()
+            execution = session.query(TaskExecution).filter(TaskExecution.id == exec_id_str).first()
             if execution:
                 execution.status = status
                 for key, value in kwargs.items():
@@ -44,8 +45,9 @@ def update_task_execution_status(execution_id: UUID, status: str, **kwargs) -> b
 def get_task_execution_by_id(execution_id: UUID) -> Optional[TaskExecution]:
     """根据ID获取任务执行记录"""
     try:
+        exec_id_str = str(execution_id)
         with make_sync_session() as session:
-            execution = session.query(TaskExecution).filter(TaskExecution.id == execution_id).first()
+            execution = session.query(TaskExecution).filter(TaskExecution.id == exec_id_str).first()
             return execution
     except Exception as e:
         logger.error(f"Failed to get task execution: {str(e)}")

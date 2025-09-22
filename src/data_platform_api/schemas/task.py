@@ -68,9 +68,9 @@ class TaskResponse(TaskBase):
 
 
 class TaskExecutionResponse(BaseModel):
-    id: int
-    task_id: int
-    executor_id: int
+    id: str
+    task_id: str
+    executor_id: str
     execution_name: str
     status: ExecutionStatus
     start_time: Optional[datetime] = None

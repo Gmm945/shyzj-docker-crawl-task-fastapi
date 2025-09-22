@@ -130,6 +130,44 @@ def main():
         return 1
     
     print("✅ 数据库初始化完成！")
+
+    # 一次性数据修复：将历史 draft 状态更新为 active
+    try:
+        fix_code = """
+from src.worker.db import make_sync_session
+from src.data_platform_api.models.task import Task
+
+with make_sync_session() as session:
+    updated = session.query(Task).filter(Task.status == 'draft').update({Task.status: 'active'})
+    session.commit()
+    print(f'迁移完成：{updated} 条任务从 draft -> active')
+"""
+        subprocess.run([sys.executable, "-c", fix_code], cwd=project_root)
+    except Exception as e:
+        print(f"迁移 draft->active 失败: {e}")
+
+    # 同步生成 env.example 关键变量（如果不存在）
+    try:
+        env_example_path = project_root / "env.example"
+        if not env_example_path.exists():
+            env_example_content = """
+PORT_RANGE_START=50001
+PORT_RANGE_END=50100
+CONTAINER_SERVICE_PORT=8000
+HEARTBEAT_TIMEOUT=300
+HEARTBEAT_REDUNDANCY=60
+MONITOR_CHECK_INTERVAL=30
+TASK_TIMEOUT=172800
+DOCKER_CRAWLER_IMAGE=crawler-service:latest
+DOCKER_API_IMAGE=data-collection-api:latest
+DOCKER_DATABASE_IMAGE=data-collection-database:latest
+DOCKER_HOST_IP=127.0.0.1
+""".strip() + "\n"
+            with open(env_example_path, 'w') as f:
+                f.write(env_example_content)
+            print("已生成 env.example 关键变量示例")
+    except Exception as e:
+        print(f"生成 env.example 失败: {e}")
     
     # 询问是否创建管理员账户
     create_admin_user()

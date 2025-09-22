@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional
 from uuid import UUID
 import time
 from loguru import logger
+from datetime import datetime
 
 from .utils.task_progress_util import BaseTaskWithProgress
 from .db_tasks import (
@@ -15,6 +16,7 @@ from .db_tasks import (
     update_task_status,
     make_sync_session,
 )
+from ..config.auth_config import settings
 from ..data_platform_api.models.task import Task, TaskExecution
 from ..user_manage.models.user import User
 from .file_tasks import (
@@ -58,22 +60,8 @@ def execute_data_collection_task_impl(
             task_type = task_in_session.task_type.value
             creator_id = task_in_session.creator_id
             
-            # 创建任务执行记录
-            execution_data = {
-                "task_id": task_id,
-                "executor_id": creator_id,
-                "execution_name": f"执行任务: {task_name}",
-                "status": "running",
-                "start_time": None,
-                "end_time": None,
-                "result_data": None,
-                "error_log": None,
-            }
-            
-            # 保存任务执行记录
-            task_execution = TaskExecution(**execution_data)
-            session.add(task_execution)
-            session.commit()
+            # 标记已有执行记录为 running（由API创建）
+            update_task_execution_status(UUID(execution_id), "running")
             
         self.update_status(10, "PROGRESS", "任务执行记录已创建", namespace=namespace)
         
@@ -102,7 +90,7 @@ def execute_data_collection_task_impl(
         
         # 保存任务结果
         if result:
-            result_file_path = save_task_result_data(workspace_path, result)
+            save_task_result_data(UUID(execution_id), result)
             self.update_status(90, "PROGRESS", "任务结果已保存", namespace=namespace)
             
             # 更新任务执行状态
@@ -110,6 +98,7 @@ def execute_data_collection_task_impl(
                 UUID(execution_id),
                 "success",
                 result_data=result,
+                end_time=datetime.now(),
                 error_log=None
             )
             
@@ -136,8 +125,9 @@ def execute_data_collection_task_impl(
         try:
             update_task_execution_status(
                 UUID(execution_id),
-                "stopped",
+                "failed",
                 result_data=None,
+                end_time=datetime.now(),
                 error_log=str(e)
             )
             update_task_status(task_id, "stopped")
@@ -154,19 +144,32 @@ def _execute_crawler_task_with_docker(task_name: str, execution_id: str, config_
         logger.info(f"使用Docker执行爬虫任务: {task_name}")
         
         # 验证配置
-        if config_data:
-            is_valid, error_msg = validate_task_config(config_data)
+        cfg = config_data or {}
+        if cfg:
+            is_valid, error_msg = validate_task_config(cfg)
             if not is_valid:
                 raise ValueError(f"配置验证失败: {error_msg}")
         
         # 处理配置文件
-        if config_data:
-            config_saved = process_task_config_file(config_data, UUID(execution_id))
+        if cfg:
+            # 为测试与稳定心跳，若未提供目标与延迟，设置约1分钟的默认爬取参数
+            try:
+                if cfg.get("task_type") == "docker-crawl":
+                    if not cfg.get("target_urls") and cfg.get("base_url"):
+                        # 30 次 × 2 秒 ≈ 60 秒
+                        cfg["target_urls"] = [cfg["base_url"]] * 30
+                    if not cfg.get("delay"):
+                        cfg["delay"] = 2
+            except Exception:
+                pass
+            config_saved = process_task_config_file(cfg, UUID(execution_id))
             if not config_saved:
                 raise Exception("配置文件处理失败")
         
         # 启动Docker容器 - 从配置文件获取镜像名称
-        docker_image = config_data.get("docker_image", "crawler-service:latest")
+        docker_image = (cfg.get("docker_image") or settings.DOCKER_CRAWLER_IMAGE)
+        if not docker_image:
+            raise Exception("未配置 Docker 镜像名称，请在 .env 设置 DOCKER_CRAWLER_IMAGE 或在任务配置中提供 docker_image")
         logger.info(f"使用Docker镜像: {docker_image}")
         config_path = f"/tmp/task_configs/{execution_id}/config.json"
         
@@ -183,12 +186,25 @@ def _execute_crawler_task_with_docker(task_name: str, execution_id: str, config_
         )
         
         logger.info(f"Docker爬虫容器已启动: {container_id}")
+        # 更新执行记录：写入容器ID与开始时间、状态running
+        try:
+            update_task_execution_status(
+                UUID(execution_id),
+                "running",
+                docker_container_id=container_id,
+                start_time=datetime.now()
+            )
+        except Exception as _:
+            pass
         
         # 监控容器执行 - 通过容器日志和状态监控
-        max_wait_time = 7200  # 最大等待2小时（爬虫任务可能很长）
-        check_interval = 30   # 每30秒检查一次
+        # 监控参数：最大等待与轮询间隔可配置（支持超长任务）
+        max_wait_time = getattr(settings, "TASK_TIMEOUT", 172800)  # 默认48小时
+        check_interval = getattr(settings, "MONITOR_CHECK_INTERVAL", 30)
         waited_time = 0
         last_heartbeat = time.time()
+        heartbeat_timeout = getattr(settings, "HEARTBEAT_TIMEOUT", 300)
+        startup_grace = getattr(settings, "HEARTBEAT_REDUNDANCY", 60)
         consecutive_empty_logs = 0  # 连续空日志计数
         
         logger.info(f"开始监控爬虫容器: {container_id}, 最大等待时间: {max_wait_time}秒")
@@ -222,19 +238,18 @@ def _execute_crawler_task_with_docker(task_name: str, execution_id: str, config_
                 consecutive_empty_logs += 1
                 logger.debug(f"容器日志为空，连续次数: {consecutive_empty_logs}")
                 
-                # 如果连续3次没有日志，检查容器状态
+                # 如果连续多次没有日志，检查容器状态
                 if consecutive_empty_logs >= 3:
                     try:
-                        # 检查容器是否还在运行
-                        from .docker_management_tasks import get_container_status_impl
-                        container_status = get_container_status_impl(None, container_id, "docker_management")
-                        
-                        if not container_status.get("exists", False):
+                        # 本地快速检查容器状态
+                        from .file_tasks import get_docker_container_status
+                        cs = get_docker_container_status(container_id)
+                        if cs and not cs.get("exists"):
                             logger.warning(f"容器不存在: {container_id}")
+                            # 标记失败并退出
                             raise Exception("容器意外停止")
-                        elif not container_status.get("running", False):
-                            logger.info(f"容器已停止: {container_id}, 状态: {container_status.get('status')}")
-                            # 容器正常停止，可能是任务完成
+                        elif cs and not cs.get("running"):
+                            logger.info(f"容器已停止: {container_id}, 状态: {cs.get('status')}")
                             break
                         else:
                             # 容器还在运行，但日志为空，重置计数继续等待
@@ -245,8 +260,8 @@ def _execute_crawler_task_with_docker(task_name: str, execution_id: str, config_
                         logger.warning(f"检查容器状态失败: {e}")
                         # 检查失败时继续等待，避免误判
             
-            # 检查心跳超时（5分钟没有新日志认为超时）
-            if time.time() - last_heartbeat > 300:
+            # 检查心跳超时（使用可配置阈值并考虑启动宽限期）
+            if waited_time > startup_grace and (time.time() - last_heartbeat > heartbeat_timeout):
                 logger.warning("爬虫任务心跳超时，强制停止容器")
                 stop_docker_task_container(container_id)
                 raise Exception("爬虫任务心跳超时")
@@ -274,6 +289,16 @@ def _execute_crawler_task_with_docker(task_name: str, execution_id: str, config_
                 stop_docker_task_container(container_id)
             except:
                 pass
+        # 标记执行失败
+        try:
+            update_task_execution_status(
+                UUID(execution_id),
+                "failed",
+                end_time=datetime.now(),
+                error_log=str(e)
+            )
+        except Exception:
+            pass
         raise
     finally:
         # 清理配置文件
@@ -302,7 +327,7 @@ def _execute_api_task_with_docker(task_name: str, execution_id: str, config_data
                 raise Exception("配置文件处理失败")
         
         # 启动Docker容器 - 从配置文件获取镜像名称
-        docker_image = config_data.get("docker_image", "data-collection-api:latest")
+        docker_image = config_data.get("docker_image", settings.DOCKER_API_IMAGE)
         logger.info(f"使用Docker镜像: {docker_image}")
         config_path = f"/tmp/task_configs/{execution_id}/config.json"
         
@@ -315,8 +340,8 @@ def _execute_api_task_with_docker(task_name: str, execution_id: str, config_data
         logger.info(f"Docker API容器已启动: {container_id}")
         
         # 监控容器执行
-        max_wait_time = 1800  # 最大等待30分钟
-        check_interval = 5    # 每5秒检查一次
+        max_wait_time = getattr(settings, "TASK_TIMEOUT", 172800)
+        check_interval = getattr(settings, "MONITOR_CHECK_INTERVAL", 30)
         waited_time = 0
         
         while waited_time < max_wait_time:
@@ -330,6 +355,15 @@ def _execute_api_task_with_docker(task_name: str, execution_id: str, config_data
                 break
             elif logs and "API_TASK_FAILED" in logs:
                 raise Exception("API任务执行失败")
+            elif not logs:
+                # 本地快速判断容器状态
+                from .file_tasks import get_docker_container_status
+                cs = get_docker_container_status(container_id)
+                if cs and not cs.get("exists"):
+                    raise Exception("容器意外停止")
+                if cs and not cs.get("running"):
+                    logger.info(f"容器已停止: {container_id}, 状态: {cs.get('status')}")
+                    break
         
         if waited_time >= max_wait_time:
             logger.warning("API任务执行超时，强制停止容器")
@@ -382,7 +416,7 @@ def _execute_database_task_with_docker(task_name: str, execution_id: str, config
                 raise Exception("配置文件处理失败")
         
         # 启动Docker容器 - 从配置文件获取镜像名称
-        docker_image = config_data.get("docker_image", "data-collection-database:latest")
+        docker_image = config_data.get("docker_image", settings.DOCKER_DATABASE_IMAGE)
         logger.info(f"使用Docker镜像: {docker_image}")
         config_path = f"/tmp/task_configs/{execution_id}/config.json"
         
@@ -401,8 +435,8 @@ def _execute_database_task_with_docker(task_name: str, execution_id: str, config
         logger.info(f"Docker数据库容器已启动: {container_id}")
         
         # 监控容器执行
-        max_wait_time = 2400  # 最大等待40分钟
-        check_interval = 10   # 每10秒检查一次
+        max_wait_time = getattr(settings, "TASK_TIMEOUT", 172800)
+        check_interval = getattr(settings, "MONITOR_CHECK_INTERVAL", 30)
         waited_time = 0
         
         while waited_time < max_wait_time:
@@ -416,6 +450,14 @@ def _execute_database_task_with_docker(task_name: str, execution_id: str, config
                 break
             elif logs and "DB_TASK_FAILED" in logs:
                 raise Exception("数据库任务执行失败")
+            elif not logs:
+                from .file_tasks import get_docker_container_status
+                cs = get_docker_container_status(container_id)
+                if cs and not cs.get("exists"):
+                    raise Exception("容器意外停止")
+                if cs and not cs.get("running"):
+                    logger.info(f"容器已停止: {container_id}, 状态: {cs.get('status')}")
+                    break
         
         if waited_time >= max_wait_time:
             logger.warning("数据库任务执行超时，强制停止容器")
