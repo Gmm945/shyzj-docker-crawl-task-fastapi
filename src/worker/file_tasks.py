@@ -14,6 +14,46 @@ from ..data_platform_api.models.task import TaskExecution
 from ..config.auth_config import settings
 
 
+def check_ssh_connection(host: str, user: str = None) -> bool:
+    """检查SSH免密登录是否配置成功"""
+    if user is None:
+        user = settings.SSH_USER
+    
+    try:
+        # 使用ssh命令测试连接，超时时间设置为10秒
+        test_command = [
+            "ssh", "-o", "ConnectTimeout=10",
+            "-o", "BatchMode=yes",  # 禁用交互式认证
+            "-o", "StrictHostKeyChecking=no",
+            f"{user}@{host}",
+            "echo 'SSH connection successful'"
+        ]
+        
+        result = subprocess.run(test_command, capture_output=True, text=True, timeout=15)
+        
+        if result.returncode == 0:
+            logger.info(f"SSH免密登录检查成功: {user}@{host}")
+            return True
+        else:
+            logger.error(f"SSH免密登录失败: {user}@{host}")
+            logger.error(f"错误信息: {result.stderr}")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        logger.error(f"SSH连接超时: {user}@{host}")
+        return False
+    except Exception as e:
+        logger.error(f"SSH连接检查异常: {e}")
+        return False
+
+
+def get_ssh_host_string(host: str, user: str = None) -> str:
+    """获取SSH连接字符串"""
+    if user is None:
+        user = settings.SSH_USER
+    return f"{user}@{host}"
+
+
 def process_task_config_file(config_data: Dict[str, Any], execution_id: UUID) -> bool:
     """处理任务配置文件"""
     try:
@@ -208,9 +248,25 @@ def upload_config_to_remote_machine(local_config_file: str, execution_id: UUID) 
         remote_config_dir = f"/tmp/task_configs/{execution_id}"
         remote_config_file = f"{remote_config_dir}/config.json"
         
+        # 检查SSH免密登录是否配置成功
+        logger.info(f"检查SSH免密登录配置: {settings.SSH_USER}@{settings.DOCKER_HOST_IP}")
+        if not check_ssh_connection(settings.DOCKER_HOST_IP, settings.SSH_USER):
+            error_msg = (
+                f"SSH免密登录配置失败！\n"
+                f"请确保已配置SSH免密登录到 {settings.SSH_USER}@{settings.DOCKER_HOST_IP}\n"
+                f"配置方法：\n"
+                f"1. 生成SSH密钥对：ssh-keygen -t rsa\n"
+                f"2. 复制公钥到远程主机：ssh-copy-id {settings.SSH_USER}@{settings.DOCKER_HOST_IP}\n"
+                f"3. 测试连接：ssh {settings.SSH_USER}@{settings.DOCKER_HOST_IP}\n"
+                f"或者通过环境变量 SSH_USER 指定其他用户名"
+            )
+            logger.error(error_msg)
+            raise Exception(error_msg)
+        
         # 创建远程配置目录
+        ssh_host = get_ssh_host_string(settings.DOCKER_HOST_IP, settings.SSH_USER)
         mkdir_command = [
-            "ssh", f"root@{settings.DOCKER_HOST_IP}",
+            "ssh", ssh_host,
             "mkdir", "-p", remote_config_dir
         ]
         
@@ -221,7 +277,7 @@ def upload_config_to_remote_machine(local_config_file: str, execution_id: UUID) 
         scp_command = [
             "scp", "-o", "StrictHostKeyChecking=no",
             local_config_file,
-            f"root@{settings.DOCKER_HOST_IP}:{remote_config_file}"
+            f"{ssh_host}:{remote_config_file}"
         ]
         
         subprocess.run(scp_command, check=True, timeout=60)
@@ -261,7 +317,7 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
         else:
             # 远程环境，使用SSH
             docker_command = [
-                "ssh", f"root@{settings.DOCKER_HOST_IP}",
+                "ssh", get_ssh_host_string(settings.DOCKER_HOST_IP),
                 "docker", "run", "-d",
                 "--name", container_name,
                 "--hostname", container_name,
@@ -310,18 +366,16 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
         
         if result.returncode == 0:
             container_id = result.stdout.strip()
-            logger.info(f"Docker task container started: {container_name} ({container_id})")
-            # 将映射端口写入执行记录的结果数据中（避免迁移）
+            logger.info(f"Docker task container started: {container_name} ({container_id}) on port {host_port}")
+            
+            # 将端口号保存到执行记录的docker_port字段中
             try:
-                from .db_tasks import save_task_result_data
-                access = {
-                    "host": settings.DOCKER_HOST_IP,
-                    "port": host_port,
-                    "url": f"http://{settings.DOCKER_HOST_IP}:{host_port}"
-                }
-                save_task_result_data(execution_id, {"access": access})
-            except Exception as _:
-                pass
+                from .db_tasks import update_task_execution_port
+                update_task_execution_port(execution_id, host_port, container_id)
+                logger.info(f"Updated execution {execution_id} with port {host_port} and container_id {container_id}")
+            except Exception as e:
+                logger.error(f"Failed to update execution port: {e}")
+            
             return container_id
         else:
             logger.error(f"Failed to start Docker container: {result.stderr}")
@@ -364,7 +418,7 @@ def stop_docker_task_container(container_id: str) -> bool:
     """停止Docker任务容器"""
     try:
         stop_command = [
-            "ssh", f"root@{settings.DOCKER_HOST_IP}",
+            "ssh", get_ssh_host_string(settings.DOCKER_HOST_IP),
             "docker", "stop", container_id
         ]
         
@@ -388,7 +442,7 @@ def cleanup_remote_config_files(execution_id: UUID) -> bool:
         remote_config_dir = f"/tmp/task_configs/{execution_id}"
         
         cleanup_command = [
-            "ssh", f"root@{settings.DOCKER_HOST_IP}",
+            "ssh", get_ssh_host_string(settings.DOCKER_HOST_IP),
             "rm", "-rf", remote_config_dir
         ]
         
@@ -409,7 +463,7 @@ def get_docker_container_logs(container_id: str, lines: int = 100) -> Optional[s
             logs_command = ["docker", "logs", "--tail", str(lines), container_id]
         else:
             logs_command = [
-                "ssh", f"root@{settings.DOCKER_HOST_IP}",
+                "ssh", get_ssh_host_string(settings.DOCKER_HOST_IP),
                 "docker", "logs", "--tail", str(lines), container_id
             ]
         
@@ -439,7 +493,7 @@ def get_docker_container_status(container_id: str) -> Optional[dict]:
             ]
         else:
             cmd = [
-                "ssh", f"root@{settings.DOCKER_HOST_IP}",
+                "ssh", get_ssh_host_string(settings.DOCKER_HOST_IP),
                 "docker", "inspect", "--format",
                 "{{.State.Status}}|{{.State.Running}}",
                 container_id,

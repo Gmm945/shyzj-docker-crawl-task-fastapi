@@ -1,10 +1,10 @@
 from uuid import UUID
-from typing import Dict, Any, List, Optional
+from typing import List, Optional
 from loguru import logger
 from datetime import datetime, timedelta
 
 from .db import make_sync_session
-from ..data_platform_api.models.task import TaskExecution, Task
+from ..data_platform_api.models.task import TaskExecution, Task, ExecutionStatus, TaskStatus
 from ..user_manage.models.user import User
 
 
@@ -59,7 +59,7 @@ def get_running_task_executions() -> List[TaskExecution]:
     try:
         with make_sync_session() as session:
             executions = session.query(TaskExecution).filter(
-                TaskExecution.status == "running"
+                TaskExecution.status == ExecutionStatus.RUNNING
             ).all()
             return executions
     except Exception as e:
@@ -109,14 +109,46 @@ def get_user_by_id(user_id: UUID) -> Optional[User]:
 def update_task_status(task_id: str, status: str) -> bool:
     """更新任务状态"""
     try:
+        # 将字符串转换为枚举值
+        if status == "active":
+            task_status = TaskStatus.ACTIVE
+        elif status == "paused":
+            task_status = TaskStatus.PAUSED
+        elif status == "running":
+            task_status = TaskStatus.RUNNING
+        else:
+            logger.error(f"Invalid task status: {status}")
+            return False
+        
         with make_sync_session() as session:
             task = session.query(Task).filter(Task.id == task_id).first()
             if task:
-                task.status = status
+                task.status = task_status
                 session.commit()
-                logger.info(f"Task {task_id} status updated to {status}")
+                logger.info(f"Task {task_id} status updated to {task_status.value}")
                 return True
             return False
     except Exception as e:
         logger.error(f"Failed to update task status: {str(e)}")
+        return False
+
+
+def update_task_execution_port(execution_id: UUID, port: int, container_id: str) -> bool:
+    """更新任务执行的端口号和容器ID"""
+    try:
+        with make_sync_session() as session:
+            # 将UUID转换为字符串进行查询
+            execution_id_str = str(execution_id)
+            execution = session.query(TaskExecution).filter(TaskExecution.id == execution_id_str).first()
+            if execution:
+                execution.docker_port = port
+                execution.docker_container_id = container_id
+                session.commit()
+                logger.info(f"Execution {execution_id} updated with port {port} and container_id {container_id}")
+                return True
+            else:
+                logger.warning(f"Execution {execution_id} not found")
+                return False
+    except Exception as e:
+        logger.error(f"Failed to update execution port: {str(e)}")
         return False

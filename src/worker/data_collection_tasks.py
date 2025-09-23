@@ -130,7 +130,7 @@ def execute_data_collection_task_impl(
                 end_time=datetime.now(),
                 error_log=str(e)
             )
-            update_task_status(task_id, "stopped")
+            update_task_status(task_id, "paused")
         except Exception as update_error:
             logger.error(f"更新任务状态失败: {update_error}")
         

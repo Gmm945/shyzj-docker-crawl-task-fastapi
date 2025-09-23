@@ -22,6 +22,7 @@ from .docker_management_tasks import (
 from .file_tasks import cleanup_task_files, cleanup_all_task_files
 from datetime import datetime, timedelta
 from .celeryconfig import redis_client
+from ..data_platform_api.models.task import ExecutionStatus
 
 
 def monitor_task_execution_impl(
@@ -41,7 +42,7 @@ def monitor_task_execution_impl(
         self.update_status(20, "PROGRESS", "任务执行记录已获取", namespace=namespace)
         
         # 检查任务状态
-        if execution.status == "running":
+        if execution.status == ExecutionStatus.RUNNING:
             # 检查心跳超时
             if execution.last_heartbeat:
                 timeout_threshold = datetime.now() - timedelta(minutes=30)

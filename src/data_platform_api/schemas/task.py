@@ -76,6 +76,8 @@ class TaskExecutionResponse(BaseModel):
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
     docker_container_id: Optional[str] = None
+    docker_port: Optional[int] = None
+    docker_access_url: Optional[str] = None  # 访问地址
     result_data: Optional[Dict[str, Any]] = None
     error_log: Optional[str] = None
     created_at: datetime

@@ -63,7 +63,7 @@ async def heartbeat(
         # 异步更新数据库中的心跳时间（避免阻塞）
         background_tasks.add_task(update_heartbeat_in_db, execution_id, current_time)
         
-        logger.debug(f"Heartbeat received from container {container_id} for execution {execution_id}")
+        logger.info(f"心跳接收成功 - 容器: {container_id}, 执行ID: {execution_id}, 时间: {current_time}")
         
         return {
             "status": "ok", 
@@ -299,12 +299,20 @@ async def update_heartbeat_in_db(execution_id: str, heartbeat_time: datetime):
             result = await db.execute(select(TaskExecution).where(TaskExecution.id == execution_id))
             execution = result.scalar_one_or_none()
             
-            if execution and execution.status == ExecutionStatus.RUNNING:
+            if execution:
+                logger.debug(f"找到执行记录 {execution_id}, 当前状态: {execution.status}")
+                
+                # 更新心跳时间，不限制状态（心跳可能在任何状态下发送）
+                old_heartbeat = execution.last_heartbeat
                 execution.last_heartbeat = heartbeat_time
                 await db.commit()
+                
+                logger.info(f"成功更新心跳时间 {execution_id}: {old_heartbeat} -> {heartbeat_time}")
+            else:
+                logger.warning(f"未找到执行记录: {execution_id}")
         
     except Exception as e:
-        logger.error(f"更新数据库心跳时间异常: {e}")
+        logger.error(f"更新数据库心跳时间异常 {execution_id}: {e}", exc_info=True)
 
 @router.post("/check-timeouts")
 async def check_heartbeat_timeouts():

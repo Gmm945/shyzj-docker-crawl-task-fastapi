@@ -51,9 +51,10 @@ class AuthSettings(BaseSettings):
     CONTAINER_SERVICE_PORT: int = int(os.getenv("CONTAINER_SERVICE_PORT", "8000"))
     DOCKER_AUTO_REMOVE: bool = os.getenv("DOCKER_AUTO_REMOVE", "False").lower() == "true"  # 运行结束是否自动删除容器
     DOCKER_REMOVE_ON_STOP: bool = os.getenv("DOCKER_REMOVE_ON_STOP", "False").lower() == "true"  # stop 接口是否删除容器
+    SSH_USER: str = os.getenv("SSH_USER", "root")  # SSH登录用户名
     # API 访问配置（供容器心跳回调使用）
     API_PORT: int = int(os.getenv("API_PORT", "8000"))
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "")  # 留空则按 DOCKER_HOST_IP/API_PORT 推断
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "")  # 留空则按 DOCKER_HOST_IP/API_PORT 
     
     # 任务配置
     MAX_CONCURRENT_TASKS: int = int(os.getenv("MAX_CONCURRENT_TASKS", "10"))

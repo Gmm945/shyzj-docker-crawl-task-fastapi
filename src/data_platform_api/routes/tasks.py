@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import Response
 from typing import List, Optional
 from uuid import UUID
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from loguru import logger
 
 from ...db_util.core import DBSessionDep, CacheManager
 from ...db_util.db import get_async_session
@@ -35,11 +36,11 @@ from datetime import datetime
 router = APIRouter()
 _obj = 'Task'
 
+
 @router.post("/add")
 async def add_task(
     req_body: TaskCreate,
     db: DBSessionDep,
-    cache: CacheManager,
     user: User = Depends(get_current_active_user)
 ):
     """
@@ -59,23 +60,36 @@ async def add_task(
             detail="任务名称已存在"
         )
     
+    # 处理URL参数
+    base_url_params_data = None
+    if req_body.base_url_params:
+        base_url_params_data = [param.model_dump() for param in req_body.base_url_params]
+        logger.info(f"处理base_url_params: {len(base_url_params_data)} 个参数")
+    
+    # 处理提取配置
+    extract_config_data = None
+    if req_body.extract_config:
+        extract_config_data = [config.model_dump() for config in req_body.extract_config]
+        logger.info(f"处理extract_config: {len(extract_config_data)} 个配置")
+    
     # 创建任务（直接激活）
     db_task = Task(
         task_name=req_body.task_name,
         task_type=req_body.task_type,
         base_url=req_body.base_url,
-        base_url_params=[param.model_dump() for param in req_body.base_url_params] if req_body.base_url_params else None,
+        base_url_params=base_url_params_data,
         need_user_login=bool(req_body.need_user_login),
-        extract_config=[config.model_dump() for config in req_body.extract_config] if req_body.extract_config else None,
+        extract_config=extract_config_data,
         description=req_body.description,
         creator_id=user.id,
         status=TaskStatus.ACTIVE  # 直接创建为激活状态
     )
     
+    logger.info(f"创建任务对象 - base_url_params: {db_task.base_url_params}, extract_config: {db_task.extract_config}")
     new_task = await create_task(db, db_task)
-    
     res = ResponseModel(message="任务创建成功", data={"task_id": new_task.id})
     return Response(content=res.model_dump_json())
+
 
 @router.get("/list")
 async def get_task_list(
@@ -113,13 +127,27 @@ async def get_task_list(
     if cached_result:
         return Response(content=cached_result)
     
-    # 非管理员只能查看自己的任务
-    if not user.is_admin:
-        # 这里需要在service层添加用户权限过滤
-        pass
-    
-    tasks = await get_page_tasks(db, sort_bys, sort_orders, pagination)
-    total = await get_page_total(db, pagination)
+    try:
+        # 调用service层函数，传入用户权限信息
+        tasks = await get_page_tasks(db, sort_bys, sort_orders, pagination, str(user.id), user.is_admin)
+        total = await get_page_total(db, pagination, str(user.id), user.is_admin)
+    except Exception as e:
+        if "'STOPPED' is not among the defined enum values" in str(e):
+            logger.warning("检测到数据库中存在STOPPED状态的任务，尝试修复...")
+            # 临时修复：将STOPPED状态的任务改为PAUSED
+            try:
+                from sqlalchemy import text
+                await db.execute(text("UPDATE tasks SET status = 'paused' WHERE status = 'stopped' AND is_delete = 0"))
+                await db.commit()
+                logger.info("已将STOPPED状态的任务更新为PAUSED状态")
+                # 重新查询
+                tasks = await get_page_tasks(db, sort_bys, sort_orders, pagination, str(user.id), user.is_admin)
+                total = await get_page_total(db, pagination, str(user.id), user.is_admin)
+            except Exception as fix_error:
+                logger.error(f"修复STOPPED状态失败: {fix_error}")
+                raise e
+        else:
+            raise e
     
     task_list = [TaskResponse.model_validate(task) for task in tasks]
     
@@ -162,22 +190,27 @@ async def get_task(
     if cached_result:
         return Response(content=cached_result)
     
-    task = await get_task_by_id(db, task_id)
+    # 调用service层函数，传入用户权限信息
+    task = await get_task_by_id(db, task_id, str(user.id), user.is_admin)
     
     if not task:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="任务不存在"
+            detail="任务不存在或无权限访问"
         )
     
-    # 非管理员只能查看自己的任务
-    if not user.is_admin and task.creator_id != user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="无权访问此任务"
-        )
+    # 获取任务数据并添加访问地址信息
+    task_data = TaskResponse.model_validate(task)
     
-    res = ResponseModel(message="获取任务详情成功", data=TaskResponse.model_validate(task))
+    # 如果有正在运行的执行，添加访问地址
+    if hasattr(task_data, 'running_execution') and task_data.running_execution:
+        execution = task_data.running_execution
+        if execution.docker_port:
+            from ...config.auth_config import settings
+            docker_host = settings.DOCKER_HOST_IP
+            execution.docker_access_url = f"http://{docker_host}:{execution.docker_port}"
+    
+    res = ResponseModel(message="获取任务详情成功", data=task_data)
     result_json = res.model_dump_json()
     
     # 缓存结果（10分钟）
@@ -308,11 +341,21 @@ async def execute_task_now(
             detail="无权执行此任务"
         )
     
-    # 检查任务状态（仅允许激活状态执行）
-    if task.status not in [TaskStatus.ACTIVE]:
+    # 检查任务状态并给出具体提示
+    if task.status == TaskStatus.PAUSED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="只能执行已激活的任务"
+            detail="任务已暂停，请先激活任务后再执行"
+        )
+    elif task.status == TaskStatus.RUNNING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="任务正在执行中，请等待完成或先停止当前执行"
+        )
+    elif task.status != TaskStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"任务状态为 {task.status.value}，只能执行已激活的任务"
         )
     
     # 检查是否已有正在执行的任务
@@ -395,7 +438,7 @@ async def stop_task(
     if not running_execution:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="没有正在执行的任务"
+            detail="没有正在执行的任务，无法停止"
         )
     
     # 停止Docker容器（通过Celery任务）
@@ -450,7 +493,15 @@ async def get_task_executions(
     )
     total = len(count_result.scalars().all())
     
-    execution_list = [TaskExecutionResponse.model_validate(execution) for execution in executions]
+    # 为每个执行记录添加访问地址
+    execution_list = []
+    for execution in executions:
+        execution_data = TaskExecutionResponse.model_validate(execution)
+        if execution_data.docker_port:
+            from ...config.auth_config import settings
+            docker_host = settings.DOCKER_HOST_IP
+            execution_data.docker_access_url = f"http://{docker_host}:{execution_data.docker_port}"
+        execution_list.append(execution_data)
     
     return ResponseModel(data={
         "items": execution_list,
@@ -459,6 +510,69 @@ async def get_task_executions(
         "size": limit,
         "pages": (total + limit - 1) // limit
     })
+
+@router.get("/{task_id}/status")
+async def get_task_status(
+    task_id: UUID,
+    db: AsyncSession = Depends(get_async_session),
+    current_user: User = Depends(get_current_active_user)
+):
+    """获取任务详细状态信息"""
+    result = await db.execute(select(Task).where(Task.id == str(task_id)))
+    task = result.scalar_one_or_none()
+    
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="任务不存在"
+        )
+    
+    # 非管理员只能查看自己的任务
+    if not current_user.is_admin and task.creator_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="无权查看此任务状态"
+        )
+    
+    # 检查是否有正在执行的记录
+    running_result = await db.execute(
+        select(TaskExecution).where(
+            TaskExecution.task_id == str(task_id),
+            TaskExecution.status == ExecutionStatus.RUNNING
+        )
+    )
+    running_execution = running_result.scalar_one_or_none()
+    
+    # 构建详细状态信息
+    status_info = {
+        "task_id": str(task_id),
+        "task_name": task.task_name,
+        "status": task.status.value,
+        "status_description": {
+            "active": "已激活，可以执行",
+            "paused": "已暂停，无法执行",
+            "running": "正在执行中"
+        }.get(task.status.value, "未知状态"),
+        "can_execute": task.status == TaskStatus.ACTIVE and not running_execution,
+        "can_activate": task.status in [TaskStatus.PAUSED],
+        "can_deactivate": task.status == TaskStatus.ACTIVE and not running_execution,
+        "can_stop": running_execution is not None,
+        "running_execution": {
+            "execution_id": str(running_execution.id),
+            "execution_name": running_execution.execution_name,
+            "start_time": running_execution.start_time,
+            "container_id": running_execution.docker_container_id,
+            "last_heartbeat": running_execution.last_heartbeat
+        } if running_execution else None,
+        "execution_summary": {
+            "total_executions": 0,  # 可以通过 /executions 接口获取详细统计
+            "success_count": 0,
+            "failed_count": 0,
+            "last_execution_time": None
+        }
+    }
+    
+    return ResponseModel(message="获取任务状态成功", data=status_info)
 
 @router.post("/{task_id}/activate")
 async def activate_task(
@@ -487,7 +601,12 @@ async def activate_task(
     if task.status == TaskStatus.ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="任务已激活"
+            detail="任务已处于激活状态，无需重复激活"
+        )
+    elif task.status == TaskStatus.RUNNING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="任务正在执行中，无法激活。请先停止当前执行"
         )
     
     # 更新任务状态为激活
@@ -519,13 +638,26 @@ async def deactivate_task(
         )
     
     # 检查任务状态
-    if task.status != TaskStatus.ACTIVE:
+    if task.status == TaskStatus.PAUSED:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="任务未激活"
+            detail="任务已处于暂停状态，无需重复停用"
+        )
+    elif task.status == TaskStatus.RUNNING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="任务正在执行中，无法停用。请先停止当前执行"
+        )
+    elif task.status != TaskStatus.ACTIVE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"任务状态为 {task.status.value}，无法停用非激活状态的任务"
         )
     
     # 更新任务状态为停用
     await update_task_status(db, str(task_id), TaskStatus.PAUSED)
     
     return ResponseModel(message="任务已停用")
+
+
+

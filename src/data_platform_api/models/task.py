@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, Boolean, DateTime, ForeignKey, Enum, JSON
+from sqlalchemy import Column, String, Text, Boolean, DateTime, ForeignKey, Enum, JSON, Integer
 from .base import BaseModel
 from datetime import datetime
 import enum
@@ -70,6 +70,7 @@ class TaskExecution(BaseModel):
     # Docker信息
     docker_container_id = Column(String(64), nullable=True, comment="Docker容器ID")
     docker_config_path = Column(String(500), nullable=True, comment="Docker配置路径")
+    docker_port = Column(Integer, nullable=True, comment="Docker容器端口号")
     
     # 结果和日志
     result_data = Column(JSON, nullable=True, comment="结果数据")

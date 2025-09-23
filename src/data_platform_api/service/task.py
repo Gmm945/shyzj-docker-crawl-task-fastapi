@@ -3,6 +3,7 @@ from uuid import UUID
 from sqlalchemy import select, and_, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.functions import count
+from loguru import logger
 
 from ..models.task import Task
 from ..schemas.task import TaskPagination, TaskStatus
@@ -10,17 +11,24 @@ from ..schemas.task import TaskPagination, TaskStatus
 
 async def create_task(db: AsyncSession, task: Task):
     """创建任务"""
+    logger.info(f"准备创建任务 - base_url_params: {task.base_url_params}, extract_config: {task.extract_config}")
     db.add(task)
     await db.commit()
     await db.refresh(task)
+    logger.info(f"任务创建完成 - ID: {task.id}, base_url_params: {task.base_url_params}, extract_config: {task.extract_config}")
     return task
 
 
-async def get_task_by_id(db: AsyncSession, task_id: UUID):
+async def get_task_by_id(db: AsyncSession, task_id: UUID, user_id: Optional[str] = None, is_admin: bool = False):
     """根据ID获取任务"""
     # 将UUID转换为字符串进行查询，因为数据库中存储的是字符串
     task_id_str = str(task_id)
     statement = select(Task).where(and_(Task.id == task_id_str, Task.is_delete == False))
+    
+    # 权限过滤：非管理员只能查看自己的任务
+    if not is_admin and user_id:
+        statement = statement.where(Task.creator_id == user_id)
+    
     result = await db.execute(statement)
     return result.scalars().first()
 
@@ -39,13 +47,17 @@ async def get_all_tasks(db: AsyncSession):
     return result.scalars().all()
 
 
-async def get_page_tasks(db: AsyncSession, sort_bys: List[str], sort_orders: List[str], pagination: TaskPagination):
+async def get_page_tasks(db: AsyncSession, sort_bys: List[str], sort_orders: List[str], pagination: TaskPagination, user_id: Optional[str] = None, is_admin: bool = False):
     """分页获取任务列表"""
     stmt = select(Task).where(Task.is_delete == False)
     
+    # 权限过滤：非管理员只能查看自己的任务
+    if not is_admin and user_id:
+        stmt = stmt.where(Task.creator_id == user_id)
+    
     # 搜索条件
     if pagination.key_word:
-        stmt = stmt.where(Task.name.contains(pagination.key_word))
+        stmt = stmt.where(Task.task_name.contains(pagination.key_word))
     if pagination.status:
         stmt = stmt.where(Task.status == pagination.status)
     
@@ -61,11 +73,16 @@ async def get_page_tasks(db: AsyncSession, sort_bys: List[str], sort_orders: Lis
     return items.scalars().all()
 
 
-async def get_page_total(db: AsyncSession, pagination: TaskPagination):
+async def get_page_total(db: AsyncSession, pagination: TaskPagination, user_id: Optional[str] = None, is_admin: bool = False):
     """获取分页总数"""
     total_stmt = select(count(Task.id)).where(Task.is_delete == False)
+    
+    # 权限过滤：非管理员只能查看自己的任务
+    if not is_admin and user_id:
+        total_stmt = total_stmt.where(Task.creator_id == user_id)
+    
     if pagination.key_word:
-        total_stmt = total_stmt.where(Task.name.contains(pagination.key_word))
+        total_stmt = total_stmt.where(Task.task_name.contains(pagination.key_word))
     if pagination.status:
         total_stmt = total_stmt.where(Task.status == pagination.status)
     total = await db.execute(total_stmt)
