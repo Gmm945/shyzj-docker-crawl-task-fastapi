@@ -38,9 +38,9 @@ RUN useradd -m -u 1000 crawler && \
 # 切换到非root用户
 USER crawler
 
-# 健康检查
+# 健康检查 - 检查爬虫进程是否存在
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/health', timeout=5)" || exit 1
+    CMD pgrep -f "python crawler_service.py" || exit 1
 
 # 运行爬虫服务
 CMD ["python", "crawler_service.py"]

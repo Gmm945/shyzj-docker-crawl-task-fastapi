@@ -13,7 +13,6 @@ class TaskType(str, enum.Enum):
 class TaskStatus(str, enum.Enum):
     ACTIVE = "active" 
     PAUSED = "paused"
-    STOPPED = "stopped"
     RUNNING = "running"
 
 
