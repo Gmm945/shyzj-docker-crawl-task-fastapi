@@ -129,6 +129,7 @@ def execute_data_collection_task_impl(
 def _execute_crawler_task_with_docker(task_name: str, execution_id: str, config_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     """使用Docker执行爬虫任务"""
     container_name = None
+    container_id = None
     try:
         logger.info(f"使用Docker执行爬虫任务: {task_name}")
         

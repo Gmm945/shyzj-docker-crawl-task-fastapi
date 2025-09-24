@@ -14,6 +14,9 @@ from ..data_platform_api.models.task import TaskExecution
 from ..config.auth_config import settings
 from .db_tasks import update_task_execution_docker_info
 
+# 端口使用缓存（单次进程内，避免重复尝试同端口）
+_USED_PORTS_CACHE: set[int] = set()
+
 
 def check_ssh_connection(host: str, user: str = None) -> bool:
     """检查SSH免密登录是否配置成功"""
@@ -297,6 +300,41 @@ def upload_config_to_remote_machine(local_config_file: str, execution_id: UUID) 
         raise
 
 
+def _is_remote_port_listening(port: int) -> bool:
+    """检测远程主机端口是否被占用（监听中）。
+    优先使用 ss，其次使用 netstat，最后尝试 lsof。
+    返回 True 表示端口被占用。
+    """
+    ssh_host = get_ssh_host_string(settings.DOCKER_HOST_IP)
+    check_cmds = [
+        ["ssh", ssh_host, "bash", "-lc", f"ss -ltn | awk '{{print $4}}' | grep -E ':{port}$' | wc -l"],
+        ["ssh", ssh_host, "bash", "-lc", f"netstat -ltn 2>/dev/null | awk '{{print $4}}' | grep -E ':{port}$' | wc -l"],
+        ["ssh", ssh_host, "bash", "-lc", f"lsof -iTCP:{port} -sTCP:LISTEN | wc -l"],
+    ]
+    for cmd in check_cmds:
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=8)
+            if result.returncode == 0:
+                count_str = (result.stdout or "").strip()
+                try:
+                    count = int(count_str)
+                except ValueError:
+                    continue
+                if count > 0:
+                    return True
+                return False
+        except Exception:
+            continue
+    # 无法检测，保守认为被占用，由上层重试
+    return True
+
+
+def _mark_port_as_used_once(port: Optional[int]) -> None:
+    if port is None:
+        return
+    _USED_PORTS_CACHE.add(port)
+
+
 def start_docker_task_container(execution_id: UUID, docker_image: str, config_path: str, 
                             additional_volumes: Optional[Dict[str, str]] = None) -> str:
     """启动Docker任务容器"""
@@ -305,18 +343,17 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
         # 检查是否为本地环境（DOCKER_HOST_IP为localhost或127.0.0.1）
         if settings.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]:
             # 本地环境，直接使用docker命令
-            docker_command = [
+            base_command = [
                 "docker", "run", "-d",
                 "--name", container_name,
                 "--hostname", container_name,
-                # 是否自动清理容器由配置控制
                 *( ["--rm"] if settings.DOCKER_AUTO_REMOVE else [] ),
             ]
             # 让容器内可访问宿主：host.docker.internal（Linux 需以下参数；mac/Win原生支持）
-            docker_command.extend(["--add-host", "host.docker.internal:host-gateway"])
+            base_command.extend(["--add-host", "host.docker.internal:host-gateway"])
         else:
             # 远程环境，使用SSH
-            docker_command = [
+            base_command = [
                 "ssh", get_ssh_host_string(settings.DOCKER_HOST_IP),
                 "docker", "run", "-d",
                 "--name", container_name,
@@ -325,14 +362,14 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
             ]
         
         # 添加配置文件挂载
-        docker_command.extend([
+        base_command.extend([
             "-v", f"{config_path}:/app/config.json:ro"
         ])
         
         # 添加额外的卷挂载
         if additional_volumes:
             for host_path, container_path in additional_volumes.items():
-                docker_command.extend(["-v", f"{host_path}:{container_path}"])
+                base_command.extend(["-v", f"{host_path}:{container_path}"])
         
         # 计算 API_BASE_URL（容器回调用）
         if settings.API_BASE_URL:
@@ -346,46 +383,59 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
                 api_base = f"http://{host}:{settings.API_PORT}"
 
         # 添加环境变量
-        docker_command.extend([
+        base_command.extend([
             "-e", f"TASK_EXECUTION_ID={execution_id}",
             "-e", "CONFIG_PATH=/app/config.json",
             "-e", f"API_BASE_URL={api_base}"
         ])
         
-        # 端口映射：从配置的端口范围中选择可用端口
-        host_port = _allocate_remote_port()
+        # 端口映射：从配置的端口范围中选择可用端口；若冲突自动重试
         container_port = settings.CONTAINER_SERVICE_PORT
-        if host_port and container_port:
-            docker_command.extend(["-p", f"{host_port}:{container_port}"])
-        
-        # 添加Docker镜像
-        docker_command.append(docker_image)
-        
-        # 执行Docker命令
-        result = subprocess.run(docker_command, capture_output=True, text=True, timeout=120)
-        
-        if result.returncode == 0:
-            container_id = result.stdout.strip()
-            logger.info(f"Docker task container started: {container_name} ({container_id}) on port {host_port}")
-            # 将端口号、容器名和Docker命令保存到执行记录中
-            try:
-                docker_command_str = " ".join(docker_command)
-                update_task_execution_docker_info(
-                    execution_id, 
-                    port=host_port, 
-                    container_name=container_name, 
-                    container_id=container_id,
-                    docker_command=docker_command_str
-                )
-                logger.info(f"Updated execution {execution_id} with Docker info: port={host_port}, container_name={container_name}, command saved")
-                
-            except Exception as e:
-                logger.error(f"Failed to update execution info: {e}")
-            
-            return container_id
-        else:
-            logger.error(f"Failed to start Docker container: {result.stderr}")
-            raise Exception(f"Docker容器启动失败: {result.stderr}")
+        max_attempts = 5
+        last_error: Optional[str] = None
+        selected_host_port: Optional[int] = None
+        for _ in range(max_attempts):
+            host_port = _allocate_remote_port()
+            selected_host_port = host_port
+            docker_command = list(base_command)
+            if host_port and container_port:
+                docker_command.extend(["-p", f"{host_port}:{container_port}"])
+            # 添加Docker镜像
+            docker_command.append(docker_image)
+            # 执行Docker命令
+            result = subprocess.run(docker_command, capture_output=True, text=True, timeout=120)
+            if result.returncode == 0:
+                container_id = result.stdout.strip()
+                logger.info(f"Docker task container started: {container_name} ({container_id}) on port {host_port}")
+                # 将端口号、容器名和Docker命令保存到执行记录中
+                try:
+                    docker_command_str = " ".join(docker_command)
+                    update_task_execution_docker_info(
+                        execution_id, 
+                        port=host_port, 
+                        container_name=container_name, 
+                        container_id=container_id,
+                        docker_command=docker_command_str
+                    )
+                    logger.info(f"Updated execution {execution_id} with Docker info: port={host_port}, container_name={container_name}, command saved")
+                except Exception as e:
+                    logger.error(f"Failed to update execution info: {e}")
+                return container_id
+            else:
+                stderr = result.stderr or ""
+                last_error = stderr
+                # 遇到端口占用，尝试下一个端口
+                if "port is already allocated" in stderr or "address already in use" in stderr.lower():
+                    logger.warning(f"Port {host_port} is in use, retrying with next available port...")
+                    # 标记该端口占用，避免下次再选到（通过远程检测实现）
+                    _mark_port_as_used_once(host_port)
+                    continue
+                # 其他错误直接失败
+                logger.error(f"Failed to start Docker container: {stderr}")
+                raise Exception(f"Docker容器启动失败: {stderr}")
+        # 超过重试次数
+        err_msg = last_error or "端口分配失败"
+        raise Exception(f"Docker容器启动失败: {err_msg}")
             
     except subprocess.TimeoutExpired:
         logger.error("Docker container start timeout")
@@ -396,28 +446,39 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
 
 
 def _allocate_remote_port() -> Optional[int]:
-    """在远程或本机分配可用端口。
-    远程场景下无法直接检测远端端口占用，采用保守策略：
-    - 若 DOCKER_HOST_IP 是本机/回环，则实际检测端口可用性
-    - 否则直接按范围顺序返回第一个端口（由 Docker 失败时重试）
-    """
+    """在远程或本机分配可用端口，支持远程探测并跳过缓存中已用端口。"""
     start = settings.PORT_RANGE_START
     end = settings.PORT_RANGE_END
     host = settings.DOCKER_HOST_IP
     local_ips = ["localhost", "127.0.0.1", "0.0.0.0"]
     if host in local_ips:
         for port in range(start, end + 1):
+            if port in _USED_PORTS_CACHE:
+                continue
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 try:
                     s.bind(("127.0.0.1", port))
+                    _USED_PORTS_CACHE.add(port)
                     return port
                 except OSError:
                     continue
         return None
     else:
-        # 远程主机：直接取范围第一个端口
-        return start
+        # 远程主机：通过 ssh 在远端检测端口是否可用
+        for port in range(start, end + 1):
+            if port in _USED_PORTS_CACHE:
+                continue
+            if not _is_remote_port_listening(port):
+                _USED_PORTS_CACHE.add(port)
+                return port
+        return None
+
+
+def _mark_port_as_used_once(port: Optional[int]) -> None:
+    if port is None:
+        return
+    _USED_PORTS_CACHE.add(port)
 
 
 def stop_docker_task_container(container_id: str) -> bool:
