@@ -105,10 +105,10 @@ start = "uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
 
 # === 数据库管理 ===
 # 统一数据库管理工具（基于纯SQL，支持.env配置）
-    "db:init" = {shell = "python scripts/db_manager.py init", help = "初始化数据库"}
-    "db:upgrade" = {shell = "python scripts/db_manager.py upgrade", help = "升级数据库"}
-    "db:reset" = {shell = "python scripts/db_manager.py reset", help = "重置数据库"}
-    "db:status" = {shell = "python scripts/db_manager.py status", help = "查看数据库状态"}
+"db:init" = {shell = "python scripts/db_manager.py init", help = "初始化数据库"}
+"db:upgrade" = {shell = "python scripts/db_manager.py upgrade", help = "升级数据库"}
+"db:reset" = {shell = "python scripts/db_manager.py reset", help = "重置数据库"}
+"db:status" = {shell = "python scripts/db_manager.py status", help = "查看数据库状态"}
 
 # === 代码质量 ===
 lint = {composite = ["black src/ scripts/ --check", "flake8 src/ scripts/", "isort src/ scripts/ --check-only"]}
