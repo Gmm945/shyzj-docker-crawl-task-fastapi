@@ -64,8 +64,8 @@ async def get_page_tasks(db: AsyncSession, sort_bys: List[str], sort_orders: Lis
     # 排序
     if sort_bys:
         stmt = stmt.order_by(*[getattr(Task, sort_field).asc() if sort_order == "asc" 
-                              else getattr(Task, sort_field).desc()
-                              for sort_field, sort_order in zip(sort_bys, sort_orders)])
+                            else getattr(Task, sort_field).desc()
+                            for sort_field, sort_order in zip(sort_bys, sort_orders)])
     
     # 分页
     stmt = stmt.offset(pagination.page * pagination.page_size).limit(pagination.page_size)

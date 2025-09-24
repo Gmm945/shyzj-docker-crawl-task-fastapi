@@ -13,7 +13,6 @@ dependencies = [
     "fastapi>=0.111.1,<1.0.0",
     "uvicorn[standard]>=0.24.0,<1.0.0",
     "sqlalchemy>=2.0.20,<3.0.0",
-    "alembic>=1.13.0,<2.0.0",
     "pymysql>=1.1.0,<2.0.0",
     "aiomysql>=0.2.0,<1.0.0",
     "cryptography>=3.4.8",
@@ -99,22 +98,17 @@ dev = [
 start = "uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
 
 # === Celery服务 ===
-worker = "celery -A src.worker.main worker -Q task_execution,docker_management,monitoring -l info --concurrency=4"
-beat = "celery -A src.worker.main beat --loglevel=info"
-flower = "celery -A src.worker.main flower --port=5555 --basic_auth=admin:admin123"
-
-# === 智能Celery启动 ===
-"celery:worker" = "celery -A src.worker.main worker -Q task_execution,docker_management,monitoring -l info --concurrency=4"
-"celery:beat" = "celery -A src.worker.main beat --loglevel=info"
-"celery:flower" = "celery -A src.worker.main flower --port=5555 --basic_auth=admin:admin123"
-"celery:all" = {shell = "echo '启动所有Celery服务...' && echo '请在新终端中分别运行:' && echo '  pdm run celery:worker' && echo '  pdm run celery:beat' && echo '  pdm run celery:flower' && echo '监控界面: http://localhost:5555'"}
+"worker" = "celery -A src.worker.main worker -Q task_execution,docker_management,monitoring,scheduler,cleanup,health_check -l info --concurrency=4"
+"beat" = "celery -A src.worker.main beat --loglevel=info"
+"flower" = "celery -A src.worker.main flower --port=5555 --basic_auth=admin:admin123"
+"worker_all" = {shell = "echo '启动所有Celery服务...' && echo '请在新终端中分别运行:' && echo '  pdm run celery:worker' && echo '  pdm run celery:beat' && echo '  pdm run celery:flower' && echo '监控界面: http://localhost:5555'"}
 
 # === 数据库管理 ===
-db-init = "alembic revision --autogenerate -m 'Initial migration'"
-db-upgrade = "alembic upgrade head"
-db-downgrade = "alembic downgrade -1"
-"db:init" = {call = "scripts.db_init:main", help = "智能数据库初始化"}
-"db:reset" = {composite = ["alembic downgrade base", "alembic upgrade head"], help = "重置数据库"}
+# 统一数据库管理工具（基于纯SQL，支持.env配置）
+    "db:init" = {shell = "python scripts/db_manager.py init", help = "初始化数据库"}
+    "db:upgrade" = {shell = "python scripts/db_manager.py upgrade", help = "升级数据库"}
+    "db:reset" = {shell = "python scripts/db_manager.py reset", help = "重置数据库"}
+    "db:status" = {shell = "python scripts/db_manager.py status", help = "查看数据库状态"}
 
 # === 代码质量 ===
 lint = {composite = ["black src/ scripts/ --check", "flake8 src/ scripts/", "isort src/ scripts/ --check-only"]}

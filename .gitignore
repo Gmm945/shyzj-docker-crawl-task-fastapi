@@ -151,9 +151,6 @@ data/
 temp/
 *.pid
 
-# Alembic
-alembic/versions/*.py
-!alembic/versions/__init__.py
 
 # PDM
 __pypackages__/

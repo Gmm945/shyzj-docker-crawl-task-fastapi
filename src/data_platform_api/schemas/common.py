@@ -20,10 +20,19 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
 class HeartbeatRequest(BaseModel):
     execution_id: str  # 改为字符串，支持UUID格式
-    container_id: str
+    container_name: str
     status: Optional[str] = None
     progress: Optional[dict] = None
     timestamp: Optional[int] = None  # 客户端时间戳，用于网络延迟检测
+
+
+class CompletionRequest(BaseModel):
+    """任务完成通知请求"""
+    execution_id: str
+    container_name: str
+    success: bool = True
+    result_data: Optional[dict] = None
+    error_message: Optional[str] = None
 
 
 class HealthResponse(BaseModel):

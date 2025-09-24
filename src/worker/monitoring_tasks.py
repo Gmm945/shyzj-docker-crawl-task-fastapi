@@ -4,6 +4,7 @@
 from typing import Any, Dict, Optional, List
 from uuid import UUID
 from loguru import logger
+from sqlalchemy import text
 
 from .celeryconfig import celery_app
 from .utils.task_progress_util import BaseTaskWithProgress
@@ -23,6 +24,7 @@ from .file_tasks import cleanup_task_files, cleanup_all_task_files
 from datetime import datetime, timedelta
 from .celeryconfig import redis_client
 from ..data_platform_api.models.task import ExecutionStatus
+from ..config.auth_config import settings
 
 
 def monitor_task_execution_impl(
@@ -126,7 +128,7 @@ def health_check_impl(
         # 检查数据库连接
         try:
             with make_sync_session() as session:
-                session.execute("SELECT 1")
+                session.execute(text("SELECT 1"))
             db_status = "healthy"
             self.update_status(20, "PROGRESS", "数据库连接正常", namespace=namespace)
         except Exception as e:
@@ -293,7 +295,8 @@ def monitor_all_task_executions_impl(
                         logger.warning(f"任务执行心跳超时: {execution.id}")
                         update_task_execution_status(
                             execution.id,
-                            "timeout",
+                            ExecutionStatus.FAILED,
+                            end_time=datetime.now(),
                             error_log="任务执行心跳超时"
                         )
                         timeout_count += 1
@@ -315,4 +318,111 @@ def monitor_all_task_executions_impl(
     except Exception as e:
         logger.error(f"监控所有任务执行失败: {e}")
         self.update_status(100, "FAILURE", f"监控失败: {str(e)}", namespace=namespace)
+        raise
+
+
+def heartbeat_monitor_impl(
+    self,
+    namespace: str = "heartbeat_monitor"
+):
+    """心跳监控任务 - 检测任务超时和失联"""
+    try:
+        self.update_status(0, "PENDING", "开始心跳监控", namespace=namespace)
+        
+        # 获取所有正在执行的任务
+        running_executions = get_running_task_executions()
+        self.update_status(20, "PROGRESS", f"找到 {len(running_executions)} 个正在执行的任务", namespace=namespace)
+        
+        timeout_count = 0
+        disconnect_count = 0
+        processed_count = 0
+        
+        # 心跳超时配置（秒）
+        heartbeat_timeout = settings.HEARTBEAT_TIMEOUT  # 默认5分钟
+        max_timeout_count = 3  # 最大超时次数
+        
+        for execution in running_executions:
+            try:
+                processed_count += 1
+                
+                # 检查是否有心跳记录
+                if not execution.last_heartbeat:
+                    # 没有心跳记录，检查是否超过启动时间 + 心跳超时
+                    if execution.start_time:
+                        timeout_threshold = execution.start_time + timedelta(seconds=heartbeat_timeout)
+                        if datetime.now() > timeout_threshold:
+                            logger.warning(f"任务从未发送心跳，可能已失联: {execution.id}")
+                            update_task_execution_status(
+                                execution.id,
+                                ExecutionStatus.FAILED,
+                                end_time=datetime.now(),
+                                error_log="任务启动后从未发送心跳，可能已失联"
+                            )
+                            disconnect_count += 1
+                    continue
+                
+                # 检查心跳超时
+                timeout_threshold = datetime.now() - timedelta(seconds=heartbeat_timeout)
+                if execution.last_heartbeat < timeout_threshold:
+                    # 从Redis获取超时计数
+                    timeout_key = f"heartbeat_timeout_count:{execution.id}"
+                    try:
+                        current_count = redis_client.get(timeout_key)
+                        current_count = int(current_count) + 1 if current_count else 1
+                        redis_client.set(timeout_key, current_count, ex=heartbeat_timeout * 2)
+                        
+                        logger.warning(f"任务心跳超时第 {current_count} 次: {execution.id}")
+                        
+                        if current_count >= max_timeout_count:
+                            # 超时三次，标记为失联
+                            logger.error(f"任务连续超时 {current_count} 次，标记为失联: {execution.id}")
+                            update_task_execution_status(
+                                execution.id,
+                                ExecutionStatus.FAILED,
+                                end_time=datetime.now(),
+                                error_log=f"任务连续心跳超时 {current_count} 次，已失联"
+                            )
+                            disconnect_count += 1
+                            # 清除超时计数
+                            redis_client.delete(timeout_key)
+                        else:
+                            timeout_count += 1
+                            
+                    except Exception as redis_e:
+                        logger.error(f"处理Redis超时计数失败: {redis_e}")
+                        # Redis异常时直接标记为超时
+                        update_task_execution_status(
+                            execution.id,
+                            ExecutionStatus.FAILED,
+                            end_time=datetime.now(),
+                            error_log="心跳超时且Redis异常"
+                        )
+                        disconnect_count += 1
+                else:
+                    # 心跳正常，清除超时计数
+                    timeout_key = f"heartbeat_timeout_count:{execution.id}"
+                    try:
+                        redis_client.delete(timeout_key)
+                    except:
+                        pass
+                
+            except Exception as e:
+                logger.error(f"处理任务心跳监控失败 {execution.id}: {e}")
+                continue
+        
+        self.update_status(100, "SUCCESS", 
+                          f"心跳监控完成，处理了 {processed_count} 个任务，{timeout_count} 个超时，{disconnect_count} 个失联", 
+                          namespace=namespace)
+        
+        return {
+            "total_executions": len(running_executions),
+            "processed_count": processed_count,
+            "timeout_count": timeout_count,
+            "disconnect_count": disconnect_count,
+            "message": "心跳监控完成"
+        }
+        
+    except Exception as e:
+        logger.error(f"心跳监控任务失败: {e}")
+        self.update_status(100, "FAILURE", f"心跳监控失败: {str(e)}", namespace=namespace)
         raise

@@ -1,14 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks
 from sqlalchemy import desc, select
-from typing import Optional, Dict, Any
-import redis
+from uuid import UUID
 from datetime import datetime, timedelta
 from loguru import logger
 from ...db_util.core import DBSessionDep, CacheManager
 from ...db_util.db import sessionmanager
 from ..models.task import TaskExecution, ExecutionStatus
-from ..schemas.common import HeartbeatRequest, Response
+from ..schemas.common import HeartbeatRequest, CompletionRequest, Response
 from ...config.auth_config import settings
 from ...worker.main import check_heartbeat_timeout
 
@@ -32,17 +30,24 @@ async def heartbeat(
     """
     try:
         execution_id = heartbeat_data.execution_id
-        container_id = heartbeat_data.container_id
+        container_name = heartbeat_data.container_name
         current_time = datetime.now()
         
         # 验证execution_id格式（应该是UUID字符串）
-        if not execution_id or len(execution_id) != 36:
+        if not execution_id:
+            logger.warning(f"Missing execution_id")
+            return {"status": "error", "message": "Missing execution_id"}
+        
+        # 简单验证UUID格式（更灵活的验证）
+        try:
+            UUID(execution_id)
+        except ValueError:
             logger.warning(f"Invalid execution_id format: {execution_id}")
             return {"status": "error", "message": "Invalid execution_id format"}
         
         # 心跳数据
         heartbeat_info = {
-            "container_id": container_id,
+            "container_name": container_name,
             "status": heartbeat_data.status or "running",
             "progress": heartbeat_data.progress or {},
             "last_heartbeat": current_time.isoformat(),
@@ -61,9 +66,15 @@ async def heartbeat(
         cache.set_cache_sync(HEARTBEAT_PREFIX.rstrip(":"), heartbeat_key_parts, heartbeat_info, ttl=settings.HEARTBEAT_TIMEOUT * 2)
         
         # 异步更新数据库中的心跳时间（避免阻塞）
-        background_tasks.add_task(update_heartbeat_in_db, execution_id, current_time)
+        try:
+            background_tasks.add_task(update_heartbeat_in_db, execution_id, current_time)
+            logger.debug(f"已提交异步任务更新心跳时间: {execution_id}")
+        except Exception as bg_error:
+            logger.error(f"提交异步任务失败: {bg_error}")
+            # 异步任务失败不影响心跳响应
         
-        logger.info(f"心跳接收成功 - 容器: {container_id}, 执行ID: {execution_id}, 时间: {current_time}")
+        logger.info(f"心跳接收成功 - 容器: {container_name}, 执行ID: {execution_id}, 时间: {current_time}")
+        logger.debug(f"心跳数据: status={heartbeat_data.status}, progress={heartbeat_data.progress}")
         
         return {
             "status": "ok", 
@@ -78,17 +89,17 @@ async def heartbeat(
 
 @router.post("/completion")
 async def task_completion(
-    completion_data: dict,
+    completion_data: CompletionRequest,
     db: DBSessionDep,
     cache: CacheManager
 ):
     """任务完成通知接口"""
     try:
-        execution_id = completion_data.get("execution_id")
-        container_id = completion_data.get("container_id")
-        success = completion_data.get("success", True)
-        result_data = completion_data.get("result_data", {})
-        error_message = completion_data.get("error_message")
+        execution_id = completion_data.execution_id
+        container_name = completion_data.container_name
+        success = completion_data.success
+        result_data = completion_data.result_data or {}
+        error_message = completion_data.error_message
         
         # 获取执行记录
         result = await db.execute(select(TaskExecution).where(TaskExecution.id == execution_id))
@@ -100,20 +111,14 @@ async def task_completion(
                 detail="执行记录不存在"
             )
         
-        # 验证容器ID（放宽：若容器名符合 task-<execution_id> 也允许；无法匹配也不阻断流程，仅记录告警）
-        if execution.docker_container_id != container_id:
-            expected_name = f"task-{execution_id}"
-            if container_id and expected_name in str(container_id):
-                logger.warning(
-                    f"容器ID不匹配，按容器名兜底通过: db={execution.docker_container_id}, got={container_id}, expected_name={expected_name}"
-                )
-                # 若数据库未记录容器ID，则以回调值回填，增强后续一致性
-                if not execution.docker_container_id:
-                    execution.docker_container_id = container_id
-            else:
-                logger.warning(
-                    f"容器ID不匹配，放宽校验但继续处理: db={execution.docker_container_id}, got={container_id}"
-                )
+        # 验证容器名（简化验证逻辑）
+        if execution.docker_container_name and execution.docker_container_name != container_name:
+            logger.warning(
+                f"容器名不匹配: db={execution.docker_container_name}, got={container_name}"
+            )
+        # 如果数据库中没有容器名，则使用回调中的容器名
+        elif not execution.docker_container_name and container_name:
+            execution.docker_container_name = container_name
         
         # 更新执行状态
         execution.status = ExecutionStatus.SUCCESS if success else ExecutionStatus.FAILED
@@ -167,7 +172,7 @@ async def get_execution_status(
             "status": execution.status,
             "start_time": execution.start_time.isoformat() if execution.start_time else None,
             "end_time": execution.end_time.isoformat() if execution.end_time else None,
-            "container_id": execution.docker_container_id,
+            "container_name": execution.docker_container_name,
             "result_data": execution.result_data,
             "error_log": execution.error_log,
         }
@@ -214,7 +219,7 @@ async def get_active_executions(
                 "execution_name": execution.execution_name,
                 "status": execution.status,
                 "start_time": execution.start_time.isoformat() if execution.start_time else None,
-                "container_id": execution.docker_container_id,
+                "container_name": execution.docker_container_name,
             }
             
             # 获取Redis中的心跳数据
@@ -295,6 +300,8 @@ async def get_monitoring_statistics(
 async def update_heartbeat_in_db(execution_id: str, heartbeat_time: datetime):
     """异步更新数据库中的心跳时间"""
     try:
+        logger.debug(f"开始更新心跳时间: {execution_id}, 时间: {heartbeat_time}")
+        
         async with sessionmanager.session() as db:
             result = await db.execute(select(TaskExecution).where(TaskExecution.id == execution_id))
             execution = result.scalar_one_or_none()

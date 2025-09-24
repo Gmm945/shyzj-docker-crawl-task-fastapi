@@ -142,7 +142,7 @@ def update_task_execution_port(execution_id: UUID, port: int, container_id: str)
             execution = session.query(TaskExecution).filter(TaskExecution.id == execution_id_str).first()
             if execution:
                 execution.docker_port = port
-                execution.docker_container_id = container_id
+                execution.docker_container_name = container_id
                 session.commit()
                 logger.info(f"Execution {execution_id} updated with port {port} and container_id {container_id}")
                 return True
@@ -152,3 +152,36 @@ def update_task_execution_port(execution_id: UUID, port: int, container_id: str)
     except Exception as e:
         logger.error(f"Failed to update execution port: {str(e)}")
         return False
+
+
+def update_task_execution_docker_info(execution_id: UUID, port: int = None, container_name: str = None, container_id: str = None, docker_command: str = None) -> bool:
+    """更新任务执行的Docker相关信息（端口、容器名、容器ID、命令）"""
+    try:
+        with make_sync_session() as session:
+            # 将UUID转换为字符串进行查询
+            execution_id_str = str(execution_id)
+            execution = session.query(TaskExecution).filter(TaskExecution.id == execution_id_str).first()
+            if execution:
+                if port is not None:
+                    execution.docker_port = port
+                if container_name is not None:
+                    execution.docker_container_name = container_name
+                if container_id is not None:
+                    execution.docker_container_id = container_id
+                if docker_command is not None:
+                    execution.docker_command = docker_command
+                
+                session.commit()
+                logger.info(f"Execution {execution_id} updated with Docker info: port={port}, container_name={container_name}, container_id={container_id}, command_saved={docker_command is not None}")
+                return True
+            else:
+                logger.warning(f"Execution {execution_id} not found")
+                return False
+    except Exception as e:
+        logger.error(f"Failed to update execution Docker info: {str(e)}")
+        return False
+
+
+def update_task_execution_docker_command(execution_id: UUID, docker_command: str) -> bool:
+    """更新任务执行的Docker命令（保持向后兼容）"""
+    return update_task_execution_docker_info(execution_id, docker_command=docker_command)

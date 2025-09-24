@@ -1,66 +1,181 @@
-# 文档目录
+# 数据采集任务管理系统 - 文档中心
 
-本目录包含项目的详细文档，按功能模块组织。
+## 📖 文档导航
 
-## 📁 文档结构
+本项目是一个基于 FastAPI、Celery、MySQL、Redis 的数据采集任务管理平台，支持 Docker 容器化任务执行。
 
+### 🚀 快速开始
+
+```bash
+# 1. 克隆项目
+git clone <repository-url>
+cd shyzj-docker-crawl-task-fastapi
+
+# 2. 安装依赖
+pdm install
+
+# 3. 初始化数据库
+pdm run db:init
+
+# 4. 启动服务
+pdm run dev:start      # API服务
+pdm run celery:all     # Celery服务
 ```
-docs/
-├── README.md                    # 文档目录说明（本文件）
-├── 安装配置指南.md              # 安装、配置和部署指南
-├── 项目架构说明.md              # 项目架构和设计说明
-└── PDM使用指南.md               # PDM 包管理工具使用说明
+
+### 📚 核心文档
+
+- **[项目架构](项目架构.md)** - 系统架构设计和模块说明
+- **[安装配置](安装配置.md)** - 完整的安装、配置和部署指南
+- **[数据库管理](数据库管理.md)** - 数据库初始化、升级和管理
+- **[任务执行](任务执行.md)** - Docker容器化任务执行方案
+- **[API文档](http://localhost:8000/docs)** - 自动生成的API接口文档
+
+## 🏗️ 系统架构
+
+### 核心组件
+- **FastAPI** - Web框架和API服务
+- **Celery** - 异步任务队列
+- **MySQL** - 数据存储
+- **Redis** - 缓存和消息队列
+- **Docker** - 容器化任务执行
+
+### 主要功能
+- 📋 **任务管理** - 创建、调度、监控数据采集任务
+- 🐳 **容器化执行** - 在Docker容器中执行爬虫、API、数据库任务
+- 💓 **心跳监控** - 实时监控任务执行状态
+- 🔄 **异步处理** - 基于Celery的异步任务处理
+- 👤 **用户管理** - JWT认证和权限管理
+
+## 🛠️ 开发工具
+
+### PDM 包管理
+```bash
+# 安装依赖
+pdm install
+
+# 运行脚本
+pdm run dev:start    # 启动开发服务器
+pdm run worker       # 启动Worker
+pdm run beat         # 启动调度器
+pdm run db:init      # 初始化数据库
 ```
 
-## 📖 主要文档
+### 数据库管理
+```bash
+# 数据库操作
+pdm run db:init      # 初始化数据库
+pdm run db:upgrade   # 升级数据库
+pdm run db:status    # 查看状态
+pdm run db:reset     # 重置数据库
+```
 
-### 核心文档
-- **[安装配置指南](安装配置指南.md)** - 完整的安装、配置和部署指南
-- **[项目架构说明](项目架构说明.md)** - 项目架构设计和模块说明
-- **[PDM使用指南](PDM使用指南.md)** - PDM 包管理工具使用说明
+## 📊 任务类型
 
-### 模块文档
-- **[Worker模块说明](../src/worker/README.md)** - 异步任务处理模块详细说明
+### 1. 爬虫任务 (Crawler)
+- 网页数据采集
+- 支持多种解析器
+- 实时进度监控
 
-## 🚀 快速导航
+### 2. API任务 (API)
+- 第三方API数据采集
+- 支持认证和限流
+- 自动重试机制
 
-### 新用户
-1. 查看根目录的 [README.md](../README.md) 了解项目概况
-2. 阅读 [安装配置指南](安装配置指南.md) 开始使用
-3. 参考 [项目架构说明](项目架构说明.md) 了解系统设计
+### 3. 数据库任务 (Database)
+- 数据库同步
+- 数据迁移
+- 批量处理
 
-### 开发者
-1. 阅读 [项目架构说明](项目架构说明.md) 了解架构设计
-2. 查看 [PDM使用指南](PDM使用指南.md) 掌握开发工具
-3. 参考 [Worker模块说明](../src/worker/README.md) 了解任务处理
+## 🔧 配置说明
 
-### 运维人员
-1. 查看 [安装配置指南](安装配置指南.md) 了解部署流程
-2. 参考 [项目架构说明](项目架构说明.md) 了解系统架构
-3. 阅读 [Worker模块说明](../src/worker/README.md) 了解任务调度
+### 环境变量
+```bash
+# 数据库配置
+MYSQL_HOST=localhost
+MYSQL_USER=root
+MYSQL_PASSWORD=123456
+MYSQL_DATABASE=data_platform
 
-## 📝 文档维护
+# Redis配置
+REDIS_HOST=localhost
+REDIS_PORT=6379
 
-### 更新原则
-- 保持文档与代码同步
-- 及时更新过时信息
-- 添加新功能的说明文档
+# API配置
+SECRET_KEY=your-secret-key
+ADMIN_PASSWORD=admin123
+```
 
-### 编写规范
-- 使用 Markdown 格式
-- 保持结构清晰
-- 添加必要的代码示例
-- 使用中文编写
+### Docker配置
+```bash
+# Docker主机配置
+DOCKER_HOST_IP=127.0.0.1
+DOCKER_HOST=tcp://remote-docker:2375
+API_BASE_URL=http://localhost:8000
+```
 
-### 贡献指南
-1. 创建文档更新分支
-2. 编写或更新文档
-3. 检查格式和内容
-4. 提交 Pull Request
+## 📈 监控和维护
 
-## 🔗 相关链接
+### 健康检查
+```bash
+# API健康检查
+curl http://localhost:8000/health
 
-- [项目主页](../README.md)
-- [快速启动](../快速启动指南.md)
-- [配置说明](../配置说明.md)
-- [API 文档](http://localhost:8000/docs) (需要启动服务)
+# 数据库状态
+pdm run db:status
+
+# Redis连接
+redis-cli ping
+```
+
+### 日志查看
+```bash
+# 查看应用日志
+tail -f logs/app.log
+
+# 查看Celery日志
+tail -f logs/celery.log
+```
+
+## 🚀 部署指南
+
+### 开发环境
+```bash
+# 1. 安装依赖
+pdm install
+
+# 2. 初始化数据库
+pdm run db:init
+
+# 3. 启动服务
+pdm run dev:start
+pdm run celery:all
+```
+
+### 生产环境
+```bash
+# 1. 备份数据库
+mysqldump -u root -p data_platform > backup.sql
+
+# 2. 升级数据库
+pdm run db:upgrade
+
+# 3. 启动服务
+# 使用 systemd 或 Docker Compose 管理服务
+```
+
+## 🆘 故障排除
+
+### 常见问题
+1. **MySQL连接失败** - 检查服务状态和配置
+2. **Redis连接失败** - 验证Redis服务运行
+3. **Docker任务失败** - 检查镜像和网络配置
+4. **任务超时** - 调整超时设置和资源限制
+
+### 获取帮助
+- 查看详细文档
+- 检查日志文件
+- 提交Issue反馈
+
+---
+
+📝 **技术特点**: 本项目采用现代化的技术栈，使用简化的SQL脚本进行数据库管理，支持Docker容器化任务执行，提供简单直观的使用体验。

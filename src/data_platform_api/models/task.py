@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Text, Boolean, DateTime, ForeignKey, Enum, JSON, Integer
+from sqlalchemy import Column, String, Text, Boolean, DateTime, JSON, Integer
 from .base import BaseModel
 from datetime import datetime
 import enum
@@ -36,8 +36,8 @@ class Task(BaseModel):
     __table_args__ = {'extend_existing': True}
     
     task_name = Column(String(200), nullable=False, comment="任务名称")
-    task_type = Column(Enum(TaskType), nullable=False, comment="任务类型")
-    status = Column(Enum(TaskStatus), default=TaskStatus.ACTIVE, comment="任务状态")
+    task_type = Column(String(50), nullable=False, comment="任务类型")
+    status = Column(String(50), default="active", comment="任务状态")
     
     # 爬虫配置
     base_url = Column(Text, nullable=True, comment="基础URL")
@@ -61,16 +61,18 @@ class TaskExecution(BaseModel):
     
     # 执行信息
     execution_name = Column(String(255), nullable=False, comment="执行名称")
-    status = Column(Enum(ExecutionStatus), default=ExecutionStatus.PENDING, comment="执行状态")
+    status = Column(String(50), default="pending", comment="执行状态")
     
     # 执行时间
     start_time = Column(DateTime, nullable=True, comment="开始时间")
     end_time = Column(DateTime, nullable=True, comment="结束时间")
     
     # Docker信息
+    docker_container_name = Column(String(64), nullable=True, comment="Docker容器名")
     docker_container_id = Column(String(64), nullable=True, comment="Docker容器ID")
     docker_config_path = Column(String(500), nullable=True, comment="Docker配置路径")
     docker_port = Column(Integer, nullable=True, comment="Docker容器端口号")
+    docker_command = Column(Text, nullable=True, comment="Docker执行命令")
     
     # 结果和日志
     result_data = Column(JSON, nullable=True, comment="结果数据")
@@ -92,7 +94,7 @@ class TaskSchedule(BaseModel):
     task_id = Column(String(36), nullable=False, comment="任务ID")
     
     # 调度类型和配置
-    schedule_type = Column(Enum(ScheduleType), nullable=False, comment="调度类型")
+    schedule_type = Column(String(50), nullable=False, comment="调度类型")
     schedule_config = Column(JSON, nullable=True, comment="调度配置")
     
     # 是否启用

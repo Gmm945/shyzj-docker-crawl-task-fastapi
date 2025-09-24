@@ -12,6 +12,7 @@ from .db import make_sync_session
 from .db_tasks import update_task_execution_status, get_task_execution_by_id
 from ..data_platform_api.models.task import TaskExecution
 from ..config.auth_config import settings
+from .db_tasks import update_task_execution_docker_info
 
 
 def check_ssh_connection(host: str, user: str = None) -> bool:
@@ -301,7 +302,6 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
     """启动Docker任务容器"""
     try:
         container_name = f"task-{execution_id}"
-        
         # 检查是否为本地环境（DOCKER_HOST_IP为localhost或127.0.0.1）
         if settings.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]:
             # 本地环境，直接使用docker命令
@@ -326,7 +326,7 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
         
         # 添加配置文件挂载
         docker_command.extend([
-            "-v", f"{config_path}:/app/config/config.json:ro"
+            "-v", f"{config_path}:/app/config.json:ro"
         ])
         
         # 添加额外的卷挂载
@@ -348,7 +348,7 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
         # 添加环境变量
         docker_command.extend([
             "-e", f"TASK_EXECUTION_ID={execution_id}",
-            "-e", "CONFIG_PATH=/app/config/config.json",
+            "-e", "CONFIG_PATH=/app/config.json",
             "-e", f"API_BASE_URL={api_base}"
         ])
         
@@ -367,14 +367,20 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
         if result.returncode == 0:
             container_id = result.stdout.strip()
             logger.info(f"Docker task container started: {container_name} ({container_id}) on port {host_port}")
-            
-            # 将端口号保存到执行记录的docker_port字段中
+            # 将端口号、容器名和Docker命令保存到执行记录中
             try:
-                from .db_tasks import update_task_execution_port
-                update_task_execution_port(execution_id, host_port, container_id)
-                logger.info(f"Updated execution {execution_id} with port {host_port} and container_id {container_id}")
+                docker_command_str = " ".join(docker_command)
+                update_task_execution_docker_info(
+                    execution_id, 
+                    port=host_port, 
+                    container_name=container_name, 
+                    container_id=container_id,
+                    docker_command=docker_command_str
+                )
+                logger.info(f"Updated execution {execution_id} with Docker info: port={host_port}, container_name={container_name}, command saved")
+                
             except Exception as e:
-                logger.error(f"Failed to update execution port: {e}")
+                logger.error(f"Failed to update execution info: {e}")
             
             return container_id
         else:

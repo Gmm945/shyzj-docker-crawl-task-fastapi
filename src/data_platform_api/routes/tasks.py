@@ -355,7 +355,7 @@ async def execute_task_now(
     elif task.status != TaskStatus.ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"任务状态为 {task.status.value}，只能执行已激活的任务"
+            detail=f"任务状态为 {task.status}，只能执行已激活的任务"
         )
     
     # 检查是否已有正在执行的任务
@@ -390,7 +390,7 @@ async def execute_task_now(
     # 构建任务配置数据
     config_data = {
         "task_name": task.task_name,
-        "task_type": task.task_type.value,
+        "task_type": task.task_type,
         "base_url": task.base_url,
         "base_url_params": task.base_url_params,
         "need_user_login": task.need_user_login,
@@ -442,8 +442,8 @@ async def stop_task(
         )
     
     # 停止Docker容器（通过Celery任务）
-    if running_execution.docker_container_id:
-        stop_docker_container.delay(running_execution.docker_container_id)
+    if running_execution.docker_container_name:
+        stop_docker_container.delay(running_execution.docker_container_name)
     
     # 更新执行状态
     running_execution.status = ExecutionStatus.CANCELLED
@@ -547,12 +547,12 @@ async def get_task_status(
     status_info = {
         "task_id": str(task_id),
         "task_name": task.task_name,
-        "status": task.status.value,
+        "status": task.status,
         "status_description": {
             "active": "已激活，可以执行",
             "paused": "已暂停，无法执行",
             "running": "正在执行中"
-        }.get(task.status.value, "未知状态"),
+        }.get(task.status, "未知状态"),
         "can_execute": task.status == TaskStatus.ACTIVE and not running_execution,
         "can_activate": task.status in [TaskStatus.PAUSED],
         "can_deactivate": task.status == TaskStatus.ACTIVE and not running_execution,
@@ -561,7 +561,7 @@ async def get_task_status(
             "execution_id": str(running_execution.id),
             "execution_name": running_execution.execution_name,
             "start_time": running_execution.start_time,
-            "container_id": running_execution.docker_container_id,
+            "container_name": running_execution.docker_container_name,
             "last_heartbeat": running_execution.last_heartbeat
         } if running_execution else None,
         "execution_summary": {
@@ -651,7 +651,7 @@ async def deactivate_task(
     elif task.status != TaskStatus.ACTIVE:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"任务状态为 {task.status.value}，无法停用非激活状态的任务"
+            detail=f"任务状态为 {task.status}，无法停用非激活状态的任务"
         )
     
     # 更新任务状态为停用

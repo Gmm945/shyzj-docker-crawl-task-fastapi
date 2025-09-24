@@ -5,7 +5,26 @@ from kombu import Exchange, Queue
 import redis
 from ..config.auth_config import settings
 # 简化的调度配置
-beat_schedule = {}
+beat_schedule = {
+    # 心跳监控任务 - 每2分钟执行一次
+    'heartbeat-monitor': {
+        'task': 'heartbeat_monitor_task',
+        'schedule': 120.0,  # 2分钟
+        'options': {'queue': 'monitoring'}
+    },
+    # 系统健康检查 - 每5分钟执行一次
+    'system-health-check': {
+        'task': 'system_health_check_task',
+        'schedule': 300.0,  # 5分钟
+        'options': {'queue': 'health_check'}
+    },
+    # 每日清理任务 - 每天凌晨2点执行
+    'daily-cleanup': {
+        'task': 'daily_cleanup_task',
+        'schedule': 86400.0,  # 24小时
+        'options': {'queue': 'cleanup'}
+    },
+}
 timezone = settings.TIMEZONE or "Asia/Shanghai"
 
 # Redis配置
@@ -60,7 +79,19 @@ celery_app.conf.task_queues = (
 )
 
 celery_app.conf.task_routes = {
-    "worker.main.*": {"queue": "task_execution"},
+    "execute_data_collection_task": {"queue": "task_execution"},
+    "monitor_task_execution": {"queue": "monitoring"},
+    "heartbeat_monitor_task": {"queue": "monitoring"},
+    "cleanup_task_resources": {"queue": "cleanup"},
+    "health_check_task": {"queue": "health_check"},
+    "cleanup_old_data": {"queue": "cleanup"},
+    "stop_docker_container": {"queue": "docker_management"},
+    "kill_docker_container": {"queue": "docker_management"},
+    "get_container_status": {"queue": "docker_management"},
+    "get_container_logs": {"queue": "docker_management"},
+    "process_scheduled_tasks": {"queue": "scheduler"},
+    "daily_cleanup_task": {"queue": "scheduler"},
+    "system_health_check_task": {"queue": "scheduler"},
 }
 
 # 任务超时配置

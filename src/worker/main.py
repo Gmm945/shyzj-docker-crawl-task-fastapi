@@ -25,6 +25,7 @@ from .monitoring_tasks import (
     cleanup_task_resources_impl,
     health_check_impl,
     cleanup_old_data_impl,
+    heartbeat_monitor_impl,
 )
 from .scheduler_tasks import (
     process_scheduled_tasks_impl,
@@ -213,6 +214,20 @@ def system_health_check_task(
 ):
     """系统健康检查任务"""
     return system_health_check_task_impl(self, namespace)
+
+
+@celery_app.task(
+    name="heartbeat_monitor_task",
+    base=BaseTaskWithProgress,
+    bind=True,
+    queue="monitoring",
+)
+def heartbeat_monitor_task(
+    self,
+    namespace: str = "heartbeat_monitor"
+):
+    """心跳监控任务 - 检测任务超时和失联"""
+    return heartbeat_monitor_impl(self, namespace)
 
 
 # 非Celery任务的辅助函数

@@ -2,6 +2,7 @@ from typing import Dict, Any, List, Optional
 from uuid import UUID
 from datetime import datetime, timedelta
 from loguru import logger
+from sqlalchemy import text
 
 from .celeryconfig import celery_app, redis_client
 from .utils.task_progress_util import BaseTaskWithProgress
@@ -288,7 +289,7 @@ def system_health_check_task_impl(
         # 检查数据库连接
         try:
             with make_sync_session() as session:
-                session.execute("SELECT 1")
+                session.execute(text("SELECT 1"))
             db_status = "healthy"
             self.update_status(20, "PROGRESS", "数据库连接正常", namespace=namespace)
         except Exception as e:
