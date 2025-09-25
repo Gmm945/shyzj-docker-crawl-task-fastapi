@@ -69,9 +69,9 @@ async def add_task(
     # 处理提取配置
     extract_config_data = None
     if req_body.extract_config:
-        extract_config_data = [config.model_dump() for config in req_body.extract_config]
-        logger.info(f"处理extract_config: {len(extract_config_data)} 个配置")
-    
+        extract_config_data = req_body.extract_config.model_dump()
+        logger.info(f"处理extract_config: 已处理")
+
     # 创建任务（直接激活）
     db_task = Task(
         task_name=req_body.task_name,
@@ -265,9 +265,10 @@ async def update_task(
         if field in ["base_url_params", "extract_config"] and value is not None:
             if field == "base_url_params":
                 value = [param.model_dump() for param in value]
-            elif field == "extract_config":
-                value = [config.model_dump() for config in value]
-        setattr(task, field, value)
+            elif field == "extract_config" and value is not None:
+                value = value.model_dump()
+
+    setattr(task, field, value)
     
     await db.commit()
     return ResponseModel(message="任务更新成功")

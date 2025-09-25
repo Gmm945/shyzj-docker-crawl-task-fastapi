@@ -61,7 +61,7 @@ async def lifespan(app: FastAPI):
 # 确保origins中的URL使用正确的scheme
 origins = [
     "http://localhost:3002",
-    "http://localhost:8000",
+    "http://localhost:8089",
     settings.APP_CORS,
 ]
 APP_CORS_ALLOW_ORIGINS = settings.APP_CORS_ALLOW_ORIGINS.split(',') if settings.APP_CORS_ALLOW_ORIGINS else []
@@ -133,7 +133,7 @@ def main():
     uvicorn.run(
         "src.main:app",
         host="0.0.0.0",
-        port=8000,
+        port=8089,
         reload=True,
         log_config=None  # 禁用uvicorn的默认日志配置
     )

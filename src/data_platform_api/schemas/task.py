@@ -17,7 +17,6 @@ class ExtractField(BaseModel):
     field_source_type: str  # string, list
     field_source_key: str
     field_desc: str
-    field_name_in_db: str
 
 
 class ExtractConfig(BaseModel):
@@ -27,13 +26,32 @@ class ExtractConfig(BaseModel):
     extract_fields: List[ExtractField]
 
 
+class TableColumn(BaseModel):
+    name: str
+    type: str
+    length: Optional[int] = None
+    comment: str
+    rel_field_name: str
+
+
+class DatabaseConfig(BaseModel):
+    db_type: str
+    host: str
+    port: int
+    username: str
+    password: str
+    database_name: str
+    table_name: str
+    table_columns: List[TableColumn]
+
+
 class TaskBase(BaseModel):
     task_name: str
     task_type: TaskType
     base_url: Optional[str] = None
     base_url_params: Optional[List[UrlParam]] = None
     need_user_login: int = 0  # 0-否，1-是
-    extract_config: Optional[List[ExtractConfig]] = None
+    extract_config: Optional[ExtractConfig] = None
     description: Optional[str] = None
 
 
@@ -47,7 +65,7 @@ class TaskUpdate(BaseModel):
     base_url: Optional[str] = None
     base_url_params: Optional[List[UrlParam]] = None
     need_user_login: Optional[int] = None
-    extract_config: Optional[List[ExtractConfig]] = None
+    extract_config: Optional[ExtractConfig] = None
     description: Optional[str] = None
     status: Optional[TaskStatus] = None
 

@@ -95,7 +95,7 @@ dev = [
 
 [tool.pdm.scripts]
 # === 启动服务器 ===
-start = "uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
+start = "uvicorn src.main:app --host 0.0.0.0 --port 8089 --reload"
 
 # === Celery服务 ===
 "worker" = "celery -A src.worker.main worker -Q task_execution,docker_management,monitoring,scheduler,cleanup,health_check -l info --concurrency=4"
@@ -122,12 +122,12 @@ test-fast = "pytest tests/ -x -v"
 "test:integration" = "pytest tests/integration/ -v"
 
 # === 文档 ===
-docs = {shell = "echo '📖 API文档: http://localhost:8000/docs' && echo '📋 ReDoc: http://localhost:8000/redoc'"}
+docs = {shell = "echo '📖 API文档: http://localhost:8089/docs' && echo '📋 ReDoc: http://localhost:8000/redoc'"}
 "docs:open" = {shell = "python -c 'import webbrowser; webbrowser.open(\"http://localhost:8000/docs\")'"}
 
 # === 监控 ===
 "monitor:flower" = {shell = "echo '📊 Celery监控: http://localhost:5555' && python -c 'import webbrowser; webbrowser.open(\"http://localhost:5555\")'"}
-"monitor:health" = {shell = "curl -s http://localhost:8000/health | python -m json.tool"}
+"monitor:health" = {shell = "curl -s http://localhost:8089/health | python -m json.tool"}
 
 # === Docker相关 ===
 "docker:build" = {shell = "echo '构建所有Docker镜像...' && docker build -f docker/Dockerfile.web -t data-platform-web:latest . && docker build -f docker/Dockerfile.worker -t data-platform-worker:latest . && docker build -f docker/Dockerfile.flower -t data-platform-flower:latest ."}
