@@ -11,16 +11,14 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 from loguru import logger
-from dotenv import load_dotenv
-
-load_dotenv()
+from ..config.auth_config import settings
 
 warnings.filterwarnings('ignore')
 
-# 数据库配置
-DATABASE_URL = os.getenv('DATABASE_URL', 'mysql+aiomysql://app_user:123456@localhost:3306/data_platform')
+# 使用配置中的异步数据库URL
+DATABASE_URL = settings.async_database_url
 
-logger.debug(f"DATABASE_URL: {DATABASE_URL}")
+logger.debug(f"Async DATABASE_URL: {DATABASE_URL}")
 
 # 添加当前目录到系统路径
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -75,14 +73,7 @@ class DatabaseSessionManager:
             await session.close()
 
 # 创建数据库会话管理器
-sessionmanager = DatabaseSessionManager(DATABASE_URL, { 
-    "pool_size": 20,
-    "max_overflow": 30,
-    "pool_timeout": 60,
-    "pool_recycle": 1800,
-    "pool_pre_ping": True,
-    "echo": False
-})
+sessionmanager = DatabaseSessionManager(DATABASE_URL, settings.database_engine_kwargs)
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     """获取异步数据库会话的依赖注入函数"""

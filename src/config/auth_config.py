@@ -32,20 +32,37 @@ class AuthSettings(BaseSettings):
     APP_FRONT_URI: str = os.getenv("APP_FRONT_URI", "")
     APP_CORS_ALLOW_ORIGINS: str = os.getenv("APP_CORS_ALLOW_ORIGINS", "")
 
-    # 数据库配置
-    DATABASE_URL: str = get_env("DATABASE_URL")
-    DATABASE_DB_NAME: str = get_env("DATABASE_DB_NAME")
+    DATABASE_DB_NAME: str = os.getenv("DATABASE_DB_NAME", "data_platform")
+    # 数据库连接配置
+    DATABASE_HOST: str = os.getenv("DATABASE_HOST", "localhost")
+    DATABASE_PORT: int = int(os.getenv("DATABASE_PORT", "3306"))
+    DATABASE_USER: str = os.getenv("DATABASE_USER", "root")
+    DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD", "")
+    DATABASE_CHARSET: str = os.getenv("DATABASE_CHARSET", "utf8mb4")
+    # 数据库连接池配置
+    DATABASE_POOL_SIZE: int = int(os.getenv("DATABASE_POOL_SIZE", "20"))
+    DATABASE_MAX_OVERFLOW: int = int(os.getenv("DATABASE_MAX_OVERFLOW", "30"))
+    DATABASE_POOL_TIMEOUT: int = int(os.getenv("DATABASE_POOL_TIMEOUT", "60"))
+    DATABASE_POOL_RECYCLE: int = int(os.getenv("DATABASE_POOL_RECYCLE", "1800"))
+    DATABASE_POOL_PRE_PING: bool = os.getenv("DATABASE_POOL_PRE_PING", "True").lower() == "true"
+    DATABASE_ECHO: bool = os.getenv("DATABASE_ECHO", "False").lower() == "true"
+    # Worker数据库连接池配置（同步）
+    WORKER_DATABASE_POOL_SIZE: int = int(os.getenv("WORKER_DATABASE_POOL_SIZE", "10"))
+    WORKER_DATABASE_MAX_OVERFLOW: int = int(os.getenv("WORKER_DATABASE_MAX_OVERFLOW", "20"))
+    WORKER_DATABASE_POOL_TIMEOUT: int = int(os.getenv("WORKER_DATABASE_POOL_TIMEOUT", "30"))
+    WORKER_DATABASE_POOL_RECYCLE: int = int(os.getenv("WORKER_DATABASE_POOL_RECYCLE", "1800"))
+    WORKER_DATABASE_POOL_PRE_PING: bool = os.getenv("WORKER_DATABASE_POOL_PRE_PING", "True").lower() == "true"
+    WORKER_DATABASE_ECHO: bool = os.getenv("WORKER_DATABASE_ECHO", "False").lower() == "true"
 
     # Redis配置
-    REDIS_URL: str = get_env("REDIS_URL")
-    REDIS_HOST: str = get_env("REDIS_HOST")
-    REDIS_PORT: int = int(get_env("REDIS_PORT"))
-    REDIS_DB: int = int(get_env("REDIS_DB"))
-    REDIS_PASSWORD: str = get_env("REDIS_PASSWORD")
+    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+    REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
 
     # Celery配置
-    CELERY_BROKER_URL: str = get_env("CELERY_BROKER_URL")
-    CELERY_RESULT_BACKEND: str = get_env("CELERY_RESULT_BACKEND")
+    CELERY_BROKER_DB: int = int(os.getenv("CELERY_BROKER_DB", "1"))
+    CELERY_RESULT_BACKEND_DB: int = int(os.getenv("CELERY_RESULT_BACKEND_DB", "2"))
 
     # 日志配置
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "DEBUG")
@@ -115,6 +132,64 @@ class AuthSettings(BaseSettings):
     def is_local_docker(self) -> bool:
         """判断是否为本地Docker环境"""
         return self.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]
+    
+    @property
+    def async_database_url(self) -> str:
+        """获取异步数据库连接URL"""
+        return f"mysql+aiomysql://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_DB_NAME}?charset={self.DATABASE_CHARSET}"
+    
+    @property
+    def sync_database_url(self) -> str:
+        """获取同步数据库连接URL"""
+        return f"mysql+pymysql://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_DB_NAME}?charset={self.DATABASE_CHARSET}"
+    
+    @property
+    def database_engine_kwargs(self) -> dict:
+        """获取异步数据库引擎配置"""
+        return {
+            "pool_size": self.DATABASE_POOL_SIZE,
+            "max_overflow": self.DATABASE_MAX_OVERFLOW,
+            "pool_timeout": self.DATABASE_POOL_TIMEOUT,
+            "pool_recycle": self.DATABASE_POOL_RECYCLE,
+            "pool_pre_ping": self.DATABASE_POOL_PRE_PING,
+            "echo": self.DATABASE_ECHO
+        }
+    
+    @property
+    def worker_database_engine_kwargs(self) -> dict:
+        """获取Worker同步数据库引擎配置"""
+        return {
+            "pool_size": self.WORKER_DATABASE_POOL_SIZE,
+            "max_overflow": self.WORKER_DATABASE_MAX_OVERFLOW,
+            "pool_timeout": self.WORKER_DATABASE_POOL_TIMEOUT,
+            "pool_recycle": self.WORKER_DATABASE_POOL_RECYCLE,
+            "pool_pre_ping": self.WORKER_DATABASE_POOL_PRE_PING,
+            "echo": self.WORKER_DATABASE_ECHO
+        }
+    
+    @property
+    def redis_url(self) -> str:
+        """获取Redis连接URL"""
+        if self.REDIS_PASSWORD:
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+        else:
+            return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.REDIS_DB}"
+    
+    @property
+    def celery_broker_url(self) -> str:
+        """获取Celery Broker URL"""
+        if self.REDIS_PASSWORD:
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.CELERY_BROKER_DB}"
+        else:
+            return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.CELERY_BROKER_DB}"
+    
+    @property
+    def celery_result_backend(self) -> str:
+        """获取Celery Result Backend URL"""
+        if self.REDIS_PASSWORD:
+            return f"redis://:{self.REDIS_PASSWORD}@{self.REDIS_HOST}:{self.REDIS_PORT}/{self.CELERY_RESULT_BACKEND_DB}"
+        else:
+            return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/{self.CELERY_RESULT_BACKEND_DB}"
 
     class Config:
         """

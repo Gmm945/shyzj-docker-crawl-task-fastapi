@@ -32,6 +32,7 @@ redis_client = redis.Redis(
     host=settings.REDIS_HOST,
     port=settings.REDIS_PORT,
     db=settings.REDIS_DB,
+    password=settings.REDIS_PASSWORD if settings.REDIS_PASSWORD else None,
     decode_responses=True,
 )
 
@@ -40,9 +41,9 @@ celery_app = Celery("data_platform")
 
 celery_app.conf.update(
     # Use Redis as the message broker
-    broker_url=settings.CELERY_BROKER_URL,
+    broker_url=settings.celery_broker_url,
     # Use Redis as the result backend
-    result_backend=settings.CELERY_RESULT_BACKEND,
+    result_backend=settings.celery_result_backend,
     # Set the expiration time for task results
     result_expires=timedelta(days=2),
     # Set 4 worker threads, each thread can handle 2 tasks simultaneously
