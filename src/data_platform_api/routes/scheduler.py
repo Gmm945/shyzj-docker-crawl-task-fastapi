@@ -1,24 +1,25 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import desc, select
-from typing import Optional
 from uuid import UUID
-from ...db_util.db import get_async_session
+
+from ...db_util.core import DBSessionDep
 from ...user_manage.models.user import User
-from ..models.task import Task, TaskSchedule, ScheduleType
-from ..schemas.task import TaskScheduleCreate, TaskScheduleResponse
-from ..schemas.common import Response
 from ...user_manage.routes.auth import get_current_active_user
 from ...utils.scheduler import schedule_manager
 from ...utils.schedule_utils import ScheduleUtils
-from datetime import datetime, timedelta
+
+from ..models.task import Task, TaskSchedule
+from ..schemas.task import TaskScheduleCreate, TaskScheduleResponse
+from ..schemas.common import Response
+
 
 router = APIRouter()
+_obj = 'Scheduler'
 
 @router.post("/", response_model=Response)
 async def create_schedule(
     schedule_data: TaskScheduleCreate,
-    db: AsyncSession = Depends(get_async_session),
+    db: DBSessionDep,
     current_user: User = Depends(get_current_active_user)
 ):
     """创建任务调度"""
@@ -78,7 +79,7 @@ async def create_schedule(
 @router.get("/task/{task_id}", response_model=Response)
 async def get_task_schedules(
     task_id: UUID,
-    db: AsyncSession = Depends(get_async_session),
+    db: DBSessionDep,
     current_user: User = Depends(get_current_active_user)
 ):
     """获取任务的调度配置"""
@@ -114,7 +115,7 @@ async def get_task_schedules(
 @router.put("/{schedule_id}/toggle", response_model=Response)
 async def toggle_schedule(
     schedule_id: int,
-    db: AsyncSession = Depends(get_async_session),
+    db: DBSessionDep,
     current_user: User = Depends(get_current_active_user)
 ):
     """启用/禁用调度"""
@@ -158,7 +159,7 @@ async def toggle_schedule(
 @router.delete("/{schedule_id}", response_model=Response)
 async def delete_schedule(
     schedule_id: int,
-    db: AsyncSession = Depends(get_async_session),
+    db: DBSessionDep,
     current_user: User = Depends(get_current_active_user)
 ):
     """删除调度"""

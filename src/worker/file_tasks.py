@@ -244,7 +244,7 @@ def upload_config_to_remote_machine(local_config_file: str, execution_id: UUID) 
     """上传配置文件到远程执行机器"""
     try:
         # 如果是本地Docker主机，直接返回本地配置文件路径（无需SSH）
-        if settings.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]:
+        if settings.is_local_docker:
             logger.info("本地环境检测到，跳过SSH上传，使用本地配置文件")
             return local_config_file
 
@@ -340,8 +340,9 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
     """启动Docker任务容器"""
     try:
         container_name = f"task-{execution_id}"
-        # 检查是否为本地环境（DOCKER_HOST_IP为localhost或127.0.0.1）
-        if settings.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]:
+        
+        # 构建 Docker 命令
+        if settings.is_local_docker:
             # 本地环境，直接使用docker命令
             base_command = [
                 "docker", "run", "-d",
@@ -371,16 +372,8 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
             for host_path, container_path in additional_volumes.items():
                 base_command.extend(["-v", f"{host_path}:{container_path}"])
         
-        # 计算 API_BASE_URL（容器回调用）
-        if settings.API_BASE_URL:
-            api_base = settings.API_BASE_URL.rstrip('/')
-        else:
-            # 本地默认使用 host.docker.internal，确保容器内能访问宿主Web
-            if settings.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]:
-                api_base = f"http://host.docker.internal:{settings.API_PORT}"
-            else:
-                host = settings.DOCKER_HOST_IP
-                api_base = f"http://{host}:{settings.API_PORT}"
+        # 使用配置类自动生成的 API_BASE_URL
+        api_base = settings.effective_api_base_url
 
         # 添加环境变量
         base_command.extend([
@@ -390,7 +383,7 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
         ])
         
         # 端口映射：从配置的端口范围中选择可用端口；若冲突自动重试
-        container_port = settings.CONTAINER_SERVICE_PORT
+        container_port = settings.API_PORT  # 使用统一的API端口
         max_attempts = 5
         last_error: Optional[str] = None
         selected_host_port: Optional[int] = None
@@ -450,8 +443,7 @@ def _allocate_remote_port() -> Optional[int]:
     start = settings.PORT_RANGE_START
     end = settings.PORT_RANGE_END
     host = settings.DOCKER_HOST_IP
-    local_ips = ["localhost", "127.0.0.1", "0.0.0.0"]
-    if host in local_ips:
+    if settings.is_local_docker:
         for port in range(start, end + 1):
             if port in _USED_PORTS_CACHE:
                 continue
@@ -526,7 +518,7 @@ def get_docker_container_logs(container_id: str, lines: int = 100) -> Optional[s
     """获取Docker容器日志"""
     try:
         # 本地环境直接使用docker命令，远程环境使用SSH
-        if settings.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]:
+        if settings.is_local_docker:
             logs_command = ["docker", "logs", "--tail", str(lines), container_id]
         else:
             logs_command = [
@@ -552,7 +544,7 @@ def get_docker_container_status(container_id: str) -> Optional[dict]:
     返回: {"exists": bool, "running": bool, "status": str}
     """
     try:
-        if settings.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]:
+        if settings.is_local_docker:
             cmd = [
                 "docker", "inspect", "--format",
                 "{{.State.Status}}|{{.State.Running}}",

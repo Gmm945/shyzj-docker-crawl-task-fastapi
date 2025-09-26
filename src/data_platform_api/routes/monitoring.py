@@ -3,12 +3,15 @@ from sqlalchemy import desc, select
 from uuid import UUID
 from datetime import datetime, timedelta
 from loguru import logger
+
 from ...db_util.core import DBSessionDep, CacheManager
 from ...db_util.db import sessionmanager
-from ..models.task import TaskExecution, ExecutionStatus
-from ..schemas.common import HeartbeatRequest, CompletionRequest, Response
 from ...config.auth_config import settings
 from ...worker.main import check_heartbeat_timeout
+
+from ..models.task import TaskExecution, ExecutionStatus
+from ..schemas.common import HeartbeatRequest, CompletionRequest, Response
+
 
 router = APIRouter()
 

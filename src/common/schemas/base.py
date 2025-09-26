@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, Any
 from datetime import datetime
 from uuid import UUID
@@ -19,9 +19,9 @@ class ResponseModel(BaseModel):
 
 class PaginationModel(BaseModel):
     """分页基础模型"""
-    page: int = 0
-    page_size: int = 10
-    key_word: Optional[str] = None
+    page: int = Field(1, ge=1, description="页码，从1开始")
+    page_size: int = Field(10, ge=1, le=100, description="每页大小")
+    key_word: Optional[str] = Field(None, description="关键词搜索")
 
 
 class BaseEntityModel(BaseModel):

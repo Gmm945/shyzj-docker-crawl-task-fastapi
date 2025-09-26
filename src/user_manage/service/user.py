@@ -84,8 +84,9 @@ async def get_page_users(db: DBSessionDep, sort_bys: List[str], sort_orders: Lis
                               else getattr(User, sort_field).desc()
                               for sort_field, sort_order in zip(sort_bys, sort_orders)])
     
-    # 分页
-    stmt = stmt.offset(pagination.page * pagination.page_size).limit(pagination.page_size)
+    # 分页（将页码从1开始转换为从0开始）
+    offset = (pagination.page - 1) * pagination.page_size
+    stmt = stmt.offset(offset).limit(pagination.page_size)
     items = await db.execute(stmt)
     return items.scalars().all()
 

@@ -4,7 +4,7 @@ from typing import List, Optional
 from uuid import UUID
 from sqlalchemy import select
 
-from ...db_util.core import DBSessionDep, CacheManager
+from ...db_util.core import DBSessionDep
 from ...common.schemas.base import ResponseModel
 from ..schemas.user import UserCreate, UserUpdate, UserResponse, UserPagination
 from ..service.user import (
@@ -21,8 +21,6 @@ from ..routes.auth import get_current_active_user
 from ..models.user import User
 from ..utils.password import get_password_hash
 from ...config.auth_config import settings
-# 缓存命名空间常量
-user_cache_namespace = 'user'
 
 router = APIRouter()
 _obj = 'User'
@@ -64,7 +62,6 @@ async def add_user(
 @router.get("/list")
 async def get_user_list(
     db: DBSessionDep,
-    cache: CacheManager,
     sort_bys: Optional[List[str]] = Query(["create_time"]),
     sort_orders: Optional[List[str]] = Query(["desc"]),
     pagination: UserPagination = Depends(),
@@ -88,41 +85,18 @@ async def get_user_list(
             detail="只有管理员可以查看用户列表"
         )
     
-    # 构建缓存键
-    cache_key_parts = [
-        str(current_user.id),
-        str(pagination.page),
-        str(pagination.page_size),
-        str(pagination.is_active),
-        str(pagination.username),
-        ",".join(sort_bys),
-        ",".join(sort_orders)
-    ]
-    
-    # 尝试从缓存获取
-    cached_result = await cache.get_cache(user_cache_namespace, cache_key_parts)
-    if cached_result:
-        return Response(content=cached_result)
-    
     users = await get_page_users(db, sort_bys, sort_orders, pagination)
     total = await get_page_total(db, pagination)
     
     user_list = [UserResponse.model_validate(user) for user in users]
     
-    res = ResponseModel(message="获取用户列表成功", data={
+    return ResponseModel(message="获取用户列表成功", data={
         "items": user_list,
         "total": total,
-        "page": pagination.page + 1,
+        "page": pagination.page,
         "size": pagination.page_size,
         "pages": (total + pagination.page_size - 1) // pagination.page_size
     })
-    
-    result_json = res.model_dump_json()
-    
-    # 缓存结果（10分钟）
-    await cache.set_cache(user_cache_namespace, cache_key_parts, result_json, ttl=600)
-    
-    return Response(content=result_json)
 
 
 @router.get("/{user_id}")

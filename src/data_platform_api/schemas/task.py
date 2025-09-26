@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from uuid import UUID
@@ -134,5 +134,4 @@ class TaskScheduleResponse(BaseModel):
 
 class TaskPagination(PaginationModel):
     """任务分页查询"""
-    status: Optional[TaskStatus] = None
-    task_name: Optional[str] = None
+    status: Optional[TaskStatus] = Field(None, description="任务状态筛选")

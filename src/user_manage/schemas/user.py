@@ -54,7 +54,6 @@ class UserResponse(BaseModel):
 class UserPagination(PaginationModel):
     """用户分页查询"""
     is_active: Optional[bool] = None
-    username: Optional[str] = Field(None, description="用户名模糊搜索")
 
 
 class UserLogin(BaseModel):

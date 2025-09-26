@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, status
 from fastapi.responses import Response
 from sqlalchemy.sql import text
 from loguru import logger
@@ -6,7 +6,7 @@ from loguru import logger
 from ...db_util.core import DBSessionDep
 from ...db_util.db import sessionmanager
 from ...common.schemas.base import ResponseModel
-from ..service.common import health_check, database_health_check, get_system_stats
+from ..service.common import health_check, get_system_stats
 
 router = APIRouter()
 _obj = 'Common'
