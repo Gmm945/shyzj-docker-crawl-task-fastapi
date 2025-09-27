@@ -163,13 +163,28 @@ async def update_task_with_validation(db: AsyncSession, task_id: UUID, update_da
         return None, "任务正在执行中，无法修改"
     
     # 更新任务信息
-    update_dict = update_data.model_dump(exclude_unset=True)
+    # 确保 update_data 是 Pydantic 模型实例
+    if hasattr(update_data, 'model_dump'):
+        update_dict = update_data.model_dump(exclude_unset=True)
+    else:
+        # 如果已经是字典，直接使用
+        update_dict = update_data
+    
     for field, value in update_dict.items():
         if field in ["base_url_params", "extract_config"] and value is not None:
             if field == "base_url_params":
-                value = [param.model_dump() for param in value]
+                # 确保每个参数都是 Pydantic 模型实例
+                if value and isinstance(value, list):
+                    processed_params = []
+                    for param in value:
+                        if hasattr(param, 'model_dump'):
+                            processed_params.append(param.model_dump())
+                        else:
+                            processed_params.append(param)
+                    value = processed_params
             elif field == "extract_config" and value is not None:
-                value = value.model_dump()
+                if hasattr(value, 'model_dump'):
+                    value = value.model_dump()
         setattr(task, field, value)
     
     await db.commit()

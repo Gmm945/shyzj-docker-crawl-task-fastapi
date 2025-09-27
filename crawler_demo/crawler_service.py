@@ -231,10 +231,10 @@ class SimpleCrawler:
 class HeartbeatClient:
     """心跳客户端"""
     
-    def __init__(self, api_base_url: str, execution_id: str, container_id: str):
+    def __init__(self, api_base_url: str, execution_id: str, container_name: str):
         self.api_base_url = api_base_url.rstrip('/')
         self.execution_id = execution_id
-        self.container_id = container_id
+        self.container_name = container_name
         self.heartbeat_url = f"{self.api_base_url}/api/v1/monitoring/heartbeat"
         self.completion_url = f"{self.api_base_url}/api/v1/monitoring/completion"
         
@@ -245,7 +245,7 @@ class HeartbeatClient:
             
             heartbeat_data = {
                 "execution_id": self.execution_id,
-                "container_id": self.container_id,
+                "container_name": self.container_name,
                 "status": "running" if crawler.is_running else "completed",
                 "progress": progress,
                 "timestamp": int(time.time())
@@ -273,7 +273,7 @@ class HeartbeatClient:
             
             completion_data = {
                 "execution_id": self.execution_id,
-                "container_id": self.container_id,
+                "container_name": self.container_name,
                 "success": success,
                 "result_data": {
                     "crawl_summary": progress,
@@ -307,7 +307,7 @@ class CrawlerContainerService:
     def __init__(self):
         # 从环境变量获取配置
         self.execution_id = os.getenv('TASK_EXECUTION_ID')
-        self.container_id = os.getenv('HOSTNAME', 'crawler-container')
+        self.container_name = os.getenv('HOSTNAME', 'crawler-container')
         self.api_base_url = os.getenv('API_BASE_URL', 'http://localhost:8000')
         self.config_path = os.getenv('CONFIG_PATH', '/app/config/config.json')
         
@@ -320,7 +320,7 @@ class CrawlerContainerService:
         
         # 初始化组件
         self.crawler = SimpleCrawler(self.config)
-        self.heartbeat_client = HeartbeatClient(self.api_base_url, self.execution_id, self.container_id)
+        self.heartbeat_client = HeartbeatClient(self.api_base_url, self.execution_id, self.container_name)
         
         # 设置信号处理
         signal.signal(signal.SIGTERM, self._signal_handler)
