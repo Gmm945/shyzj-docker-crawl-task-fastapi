@@ -27,11 +27,11 @@ class DatabaseManager:
         self.project_root = project_root
         
         # 从环境变量获取数据库配置
-        mysql_host = os.getenv('MYSQL_HOST', 'localhost')
-        mysql_port = os.getenv('MYSQL_PORT', '3306')
-        mysql_user = os.getenv('MYSQL_USER', 'root')
-        mysql_password = os.getenv('MYSQL_PASSWORD', '123456')
-        mysql_database = os.getenv('MYSQL_DATABASE', 'data_platform')
+        mysql_host = os.getenv('DATABASE_HOST')
+        mysql_port = os.getenv('DATABASE_PORT')
+        mysql_user = os.getenv('DATABASE_USER')
+        mysql_password = os.getenv('DATABASE_PASSWORD')
+        mysql_database = os.getenv('DATABASE_DB_NAME')
         
         # 创建数据库连接URL（不指定数据库，因为数据库可能不存在）
         self.database_url = f"mysql+pymysql://{mysql_user}:{mysql_password}@{mysql_host}:{mysql_port}"
@@ -287,8 +287,8 @@ def main():
     
     print("\n📋 下一步:")
     print("  pdm run start            # 启动API服务器")
-    print("  pdm run celery:worker    # 启动Celery Worker")
-    print("  pdm run celery:beat      # 启动Celery Beat")
+    print("  pdm run worker    # 启动Celery Worker")
+    print("  pdm run beat      # 启动Celery Beat")
     
     return 0
 

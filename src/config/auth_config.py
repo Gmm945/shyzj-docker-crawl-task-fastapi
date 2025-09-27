@@ -32,12 +32,12 @@ class AuthSettings(BaseSettings):
     APP_FRONT_URI: str = os.getenv("APP_FRONT_URI", "")
     APP_CORS_ALLOW_ORIGINS: str = os.getenv("APP_CORS_ALLOW_ORIGINS", "")
 
-    DATABASE_DB_NAME: str = os.getenv("DATABASE_DB_NAME", "data_platform")
+    DATABASE_DB_NAME: str = os.getenv("DATABASE_DB_NAME")
     # 数据库连接配置
-    DATABASE_HOST: str = os.getenv("DATABASE_HOST", "localhost")
-    DATABASE_PORT: int = int(os.getenv("DATABASE_PORT", "3306"))
-    DATABASE_USER: str = os.getenv("DATABASE_USER", "root")
-    DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD", "")
+    DATABASE_HOST: str = os.getenv("DATABASE_HOST")
+    DATABASE_PORT: int = int(os.getenv("DATABASE_PORT"))
+    DATABASE_USER: str = os.getenv("DATABASE_USER")
+    DATABASE_PASSWORD: str = os.getenv("DATABASE_PASSWORD")
     DATABASE_CHARSET: str = os.getenv("DATABASE_CHARSET", "utf8mb4")
     # 数据库连接池配置
     DATABASE_POOL_SIZE: int = int(os.getenv("DATABASE_POOL_SIZE", "20"))
@@ -55,35 +55,35 @@ class AuthSettings(BaseSettings):
     WORKER_DATABASE_ECHO: bool = os.getenv("WORKER_DATABASE_ECHO", "False").lower() == "true"
 
     # Redis配置
-    REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
-    REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
-    REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
+    REDIS_HOST: str = os.getenv("REDIS_HOST")
+    REDIS_PORT: int = int(os.getenv("REDIS_PORT"))
+    REDIS_DB: int = int(os.getenv("REDIS_DB"))
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
 
     # Celery配置
-    CELERY_BROKER_DB: int = int(os.getenv("CELERY_BROKER_DB", "1"))
-    CELERY_RESULT_BACKEND_DB: int = int(os.getenv("CELERY_RESULT_BACKEND_DB", "2"))
+    CELERY_BROKER_DB: int = int(os.getenv("CELERY_BROKER_DB"))
+    CELERY_RESULT_BACKEND_DB: int = int(os.getenv("CELERY_RESULT_BACKEND_DB"))
 
     # 日志配置
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "DEBUG")
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     
     # 远程Docker配置
-    DOCKER_HOST: str = os.getenv("DOCKER_HOST", "unix:///var/run/docker.sock")
-    DOCKER_HOST_IP: str = os.getenv("DOCKER_HOST_IP", "localhost")  # Docker主机IP
+    DOCKER_HOST: str = os.getenv("DOCKER_HOST")
+    DOCKER_HOST_IP: str = os.getenv("DOCKER_HOST_IP")  # Docker主机IP
     SSH_USER: str = os.getenv("SSH_USER", "root")  # SSH登录用户名
     DOCKER_AUTO_REMOVE: bool = os.getenv("DOCKER_AUTO_REMOVE", "False").lower() == "true"  # 运行结束是否自动删除容器
     DOCKER_REMOVE_ON_STOP: bool = os.getenv("DOCKER_REMOVE_ON_STOP", "False").lower() == "true"  # stop 接口是否删除容器
     DOCKER_CONFIG_PATH: str = os.getenv("DOCKER_CONFIG_PATH", "/app/configs")
     
     # 任务Docker镜像配置
-    DOCKER_CRAWLER_IMAGE: str = os.getenv("DOCKER_CRAWLER_IMAGE", "crawler-service:latest")
+    DOCKER_CRAWLER_IMAGE: str = os.getenv("DOCKER_CRAWLER_IMAGE")
     DOCKER_API_IMAGE: str = os.getenv("DOCKER_API_IMAGE", "data-collection-api:latest")
     DOCKER_DATABASE_IMAGE: str = os.getenv("DOCKER_DATABASE_IMAGE", "data-collection-database:latest")
     
     # 主服务端口配置
-    API_PORT: int = int(os.getenv("API_PORT", "8000"))  # API服务端口
-    METRICS_PORT: int = int(os.getenv("METRICS_PORT", "9090"))  # 监控端口
+    CONTAINER_PORT: int = int(os.getenv("CONTAINER_PORT"))  # API服务端口
+    METRICS_PORT: int = int(os.getenv("METRICS_PORT"))  # 监控端口
     # 远程docker服务端口范围
     PORT_RANGE_START: int = int(os.getenv("PORT_RANGE_START", "50001"))  # 容器端口范围开始
     PORT_RANGE_END: int = int(os.getenv("PORT_RANGE_END", "50100"))  # 容器端口范围结束
@@ -118,16 +118,16 @@ class AuthSettings(BaseSettings):
     @property
     def effective_api_base_url(self) -> str:
         """获取有效的API基础URL"""
-        if self.API_BASE_URL:
+        if self.API_BASE_URL:       # -> http://192.168.0.104:8089
             return self.API_BASE_URL.rstrip('/')
         
         # 自动生成API基础URL
         is_local = self.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]
         if is_local:
-            return f"http://host.docker.internal:{self.API_PORT}"
+            return f"http://host.docker.internal:{self.CONTAINER_PORT}"
         else:
-            return f"http://{self.DOCKER_HOST_IP}:{self.API_PORT}"
-    
+            return f"http://{self.DOCKER_HOST_IP}:{self.CONTAINER_PORT}"
+
     @property
     def is_local_docker(self) -> bool:
         """判断是否为本地Docker环境"""

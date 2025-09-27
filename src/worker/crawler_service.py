@@ -251,8 +251,8 @@ class CrawlerContainerService:
     def __init__(self):
         # 从环境变量获取配置
         self.execution_id = os.getenv('TASK_EXECUTION_ID')
-        self.container_id = os.getenv('HOSTNAME', 'crawler-container')
-        self.api_base_url = os.getenv('API_BASE_URL', 'http://localhost:8000')
+        self.container_id = os.getenv('HOSTNAME')
+        self.api_base_url = os.getenv('API_BASE_URL')
         self.config_path = os.getenv('CONFIG_PATH', '/app/config/config.json')
         
         if not self.execution_id:
