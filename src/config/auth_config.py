@@ -69,8 +69,7 @@ class AuthSettings(BaseSettings):
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     
     # 远程Docker配置
-    DOCKER_HOST: str = os.getenv("DOCKER_HOST")
-    DOCKER_HOST_IP: str = os.getenv("DOCKER_HOST_IP")  # Docker主机IP
+    DOCKER_HOST_IP: str = os.getenv("DOCKER_HOST_IP", "localhost")  # Docker主机IP
     SSH_USER: str = os.getenv("SSH_USER", "root")  # SSH登录用户名
     DOCKER_AUTO_REMOVE: bool = os.getenv("DOCKER_AUTO_REMOVE", "False").lower() == "true"  # 运行结束是否自动删除容器
     DOCKER_REMOVE_ON_STOP: bool = os.getenv("DOCKER_REMOVE_ON_STOP", "False").lower() == "true"  # stop 接口是否删除容器
@@ -82,14 +81,15 @@ class AuthSettings(BaseSettings):
     DOCKER_DATABASE_IMAGE: str = os.getenv("DOCKER_DATABASE_IMAGE", "data-collection-database:latest")
     
     # 主服务端口配置
-    CONTAINER_PORT: int = int(os.getenv("CONTAINER_PORT"))  # API服务端口
+    API_PORT: int = int(os.getenv("API_PORT"))  # API服务端口
+    DOCKER_PORT: int = int(os.getenv("DOCKER_PORT"))  # 远端docker服务内部端口固定
     METRICS_PORT: int = int(os.getenv("METRICS_PORT"))  # 监控端口
     # 远程docker服务端口范围
     PORT_RANGE_START: int = int(os.getenv("PORT_RANGE_START", "50001"))  # 容器端口范围开始
     PORT_RANGE_END: int = int(os.getenv("PORT_RANGE_END", "50100"))  # 容器端口范围结束
     
     # 主服务API访问配置（供容器心跳回调使用）
-    API_BASE_URL: str = os.getenv("API_BASE_URL", "")  # 自定义API基础URL，留空则自动生成
+    API_BASE_URL: str = os.getenv("API_BASE_URL", "")  # 自定义API基础URL，本地环境可留空自动生成
     # 任务配置
     MAX_CONCURRENT_TASKS: int = int(os.getenv("MAX_CONCURRENT_TASKS", "10"))
     TASK_TIMEOUT: int = int(os.getenv("TASK_TIMEOUT", "3600"))  # 1小时
@@ -117,20 +117,24 @@ class AuthSettings(BaseSettings):
     
     @property
     def effective_api_base_url(self) -> str:
-        """获取有效的API基础URL"""
-        if self.API_BASE_URL:       # -> http://192.168.0.104:8089
+        """获取有效的API基础URL（供爬虫容器回调主服务使用）"""
+        if self.API_BASE_URL:
             return self.API_BASE_URL.rstrip('/')
         
-        # 自动生成API基础URL
-        is_local = self.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]
-        if is_local:
-            return f"http://host.docker.internal:{self.CONTAINER_PORT}"
-        else:
-            return f"http://{self.DOCKER_HOST_IP}:{self.CONTAINER_PORT}"
-
+        # 如果是本地环境，使用本地方法
+        if self.is_local_docker:
+            is_running_in_docker = os.path.exists('/.dockerenv')
+            if is_running_in_docker:
+                return f"http://host.docker.internal:{self.API_PORT}"
+            else:
+                return f"http://localhost:{self.API_PORT}"
+        # 非本地环境必须配置API_BASE_URL
+        raise ValueError("非本地环境必须配置 API_BASE_URL，请设置环境变量 API_BASE_URL")
+    
     @property
     def is_local_docker(self) -> bool:
         """判断是否为本地Docker环境"""
+        # 通过检查DOCKER_HOST_IP来判断是否为本地Docker环境
         return self.DOCKER_HOST_IP in ["localhost", "127.0.0.1", "0.0.0.0"]
     
     @property

@@ -5,6 +5,7 @@ from uuid import UUID
 from loguru import logger
 from datetime import datetime
 
+from ...config.auth_config import settings
 from ...db_util.core import DBSessionDep
 from ...user_manage.models.user import User
 from ...common.schemas.base import ResponseModel
@@ -369,7 +370,6 @@ async def get_task_executions(
     for execution in executions:
         execution_data = TaskExecutionResponse.model_validate(execution)
         if execution_data.docker_port:
-            from ...config.auth_config import settings
             docker_host = settings.DOCKER_HOST_IP
             execution_data.docker_access_url = f"http://{docker_host}:{execution_data.docker_port}"
         execution_list.append(execution_data)

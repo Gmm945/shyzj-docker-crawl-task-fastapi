@@ -383,13 +383,11 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
         ])
         
         # 端口映射：从配置的端口范围中选择可用端口；若冲突自动重试
-        container_port = settings.CONTAINER_PORT  # 使用统一的API端口
+        container_port = settings.DOCKER_PORT  # 使用统一的API端口
         max_attempts = 5
         last_error: Optional[str] = None
-        selected_host_port: Optional[int] = None
         for _ in range(max_attempts):
             host_port = _allocate_remote_port()
-            selected_host_port = host_port
             docker_command = list(base_command)
             if host_port and container_port:
                 docker_command.extend(["-p", f"{host_port}:{container_port}"])
