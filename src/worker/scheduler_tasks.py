@@ -159,6 +159,7 @@ def calculate_next_run_time(schedule: TaskSchedule) -> Optional[datetime]:
     """计算下次执行时间"""
     try:
         current_time = datetime.now()
+        config = schedule.schedule_config or {}
         
         if schedule.schedule_type == ScheduleType.IMMEDIATE:
             return None  # 立即执行，不需要下次执行时间
@@ -168,13 +169,86 @@ def calculate_next_run_time(schedule: TaskSchedule) -> Optional[datetime]:
             schedule.is_active = False
             return None
             
+        elif schedule.schedule_type == ScheduleType.MINUTELY:
+            # 每N分钟执行：{"interval": 5}
+            interval = config.get("interval", 1)
+            return current_time + timedelta(minutes=interval)
+            
+        elif schedule.schedule_type == ScheduleType.HOURLY:
+            # 每N小时执行：{"interval": 2}
+            interval = config.get("interval", 1)
+            return current_time + timedelta(hours=interval)
+            
+        elif schedule.schedule_type == ScheduleType.DAILY:
+            # 每天指定时间执行：{"time": "09:00:00"}
+            time_str = config.get("time", "00:00:00")
+            hour, minute, second = map(int, time_str.split(":"))
+            next_time = current_time.replace(hour=hour, minute=minute, second=second, microsecond=0)
+            
+            # 如果今天的时间已过，则安排到明天
+            if next_time <= current_time:
+                next_time = next_time + timedelta(days=1)
+            
+            return next_time
+            
         elif schedule.schedule_type == ScheduleType.WEEKLY:
-            # 每周执行
-            return current_time + timedelta(weeks=1)
+            # 每周执行 - 使用配置中的具体设置
+            days = config.get("days", [])
+            time_str = config.get("time", "00:00:00")
+            
+            if days and time_str:
+                # 如果有详细配置，按配置计算
+                hour, minute, second = map(int, time_str.split(":"))
+                
+                # 找到下一个执行日期
+                for i in range(7):
+                    check_date = current_time + timedelta(days=i)
+                    if check_date.weekday() + 1 in days:  # weekday()返回0-6，我们需要1-7
+                        next_time = check_date.replace(hour=hour, minute=minute, second=second, microsecond=0)
+                        if next_time > current_time:
+                            return next_time
+                
+                # 如果本周没有找到，则查找下周
+                for i in range(7, 14):
+                    check_date = current_time + timedelta(days=i)
+                    if check_date.weekday() + 1 in days:
+                        next_time = check_date.replace(hour=hour, minute=minute, second=second, microsecond=0)
+                        return next_time
+            else:
+                # 简单模式：每周执行一次
+                return current_time + timedelta(weeks=1)
             
         elif schedule.schedule_type == ScheduleType.MONTHLY:
-            # 每月执行
-            return current_time + timedelta(days=30)
+            # 每月执行 - 使用配置中的具体设置
+            dates = config.get("dates", [])
+            time_str = config.get("time", "00:00:00")
+            
+            if dates and time_str:
+                # 如果有详细配置，按配置计算
+                hour, minute, second = map(int, time_str.split(":"))
+                
+                # 查找本月的执行日期
+                for date in dates:
+                    try:
+                        next_time = current_time.replace(day=date, hour=hour, minute=minute, second=second, microsecond=0)
+                        if next_time > current_time:
+                            return next_time
+                    except ValueError:
+                        continue  # 日期不存在（如2月30日）
+                
+                # 如果本月没有找到，查找下个月
+                next_month = current_time.replace(day=1) + timedelta(days=32)
+                next_month = next_month.replace(day=1)
+                
+                for date in dates:
+                    try:
+                        next_time = next_month.replace(day=date, hour=hour, minute=minute, second=second, microsecond=0)
+                        return next_time
+                    except ValueError:
+                        continue
+            else:
+                # 简单模式：每30天执行一次
+                return current_time + timedelta(days=30)
             
         else:
             logger.warning(f"未知的调度类型: {schedule.schedule_type}")
