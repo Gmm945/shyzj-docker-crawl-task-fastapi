@@ -4,24 +4,60 @@ from celery import Celery
 from kombu import Exchange, Queue
 import redis
 from ..config.auth_config import settings
-# 简化的调度配置
+# Celery Beat 定时任务配置
+from celery.schedules import crontab
+
 beat_schedule = {
+    # ========== 核心调度任务 ==========
+    # 处理定时任务 - 每分钟执行一次（核心功能）
+    'process-scheduled-tasks': {
+        'task': 'process_scheduled_tasks',
+        'schedule': crontab(minute='*'),  # 每分钟执行
+        'options': {'queue': 'scheduler'}
+    },
+    
+    # ========== 监控任务 ==========
     # 心跳监控任务 - 每2分钟执行一次
     'heartbeat-monitor': {
         'task': 'heartbeat_monitor_task',
-        'schedule': 120.0,  # 2分钟
+        'schedule': timedelta(seconds=120),  # 2分钟
         'options': {'queue': 'monitoring'}
     },
+    
+    # 监控任务执行 - 每30秒执行一次
+    'monitor-task-execution': {
+        'task': 'monitor_task_execution',
+        'schedule': timedelta(seconds=30),  # 每30秒执行
+        'options': {'queue': 'monitoring'}
+    },
+    
+    # ========== 健康检查任务 ==========
     # 系统健康检查 - 每5分钟执行一次
     'system-health-check': {
         'task': 'system_health_check_task',
-        'schedule': 300.0,  # 5分钟
+        'schedule': crontab(minute='*/5'),  # 每5分钟执行
         'options': {'queue': 'health_check'}
     },
-    # 每日清理任务 - 每天凌晨2点执行
+    
+    # ========== 清理任务 ==========
+    # 清理旧数据 - 每天凌晨2点执行
+    'cleanup-old-data': {
+        'task': 'cleanup_old_data',
+        'schedule': crontab(hour=2, minute=0),  # 每天凌晨2点
+        'options': {'queue': 'cleanup'}
+    },
+    
+    # 清理任务资源 - 每小时执行一次
+    'cleanup-task-resources': {
+        'task': 'cleanup_task_resources',
+        'schedule': crontab(minute=0),  # 每小时执行
+        'options': {'queue': 'cleanup'}
+    },
+    
+    # 每日清理任务 - 每天凌晨3点执行
     'daily-cleanup': {
         'task': 'daily_cleanup_task',
-        'schedule': 86400.0,  # 24小时
+        'schedule': crontab(hour=3, minute=0),  # 每天凌晨3点
         'options': {'queue': 'cleanup'}
     },
 }

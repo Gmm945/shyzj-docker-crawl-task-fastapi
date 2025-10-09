@@ -114,7 +114,7 @@ async def get_task_schedules(
 
 @router.put("/{schedule_id}/toggle", response_model=Response)
 async def toggle_schedule(
-    schedule_id: int,
+    schedule_id: str,
     db: DBSessionDep,
     current_user: User = Depends(get_current_active_user)
 ):
@@ -158,7 +158,7 @@ async def toggle_schedule(
 
 @router.delete("/{schedule_id}", response_model=Response)
 async def delete_schedule(
-    schedule_id: int,
+    schedule_id: str,
     db: DBSessionDep,
     current_user: User = Depends(get_current_active_user)
 ):

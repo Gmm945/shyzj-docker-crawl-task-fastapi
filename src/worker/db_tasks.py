@@ -8,18 +8,19 @@ from ..data_platform_api.models.task import TaskExecution, Task, ExecutionStatus
 from ..user_manage.models.user import User
 
 
-def save_task_execution_to_db(execution_data: dict) -> bool:
-    """保存任务执行记录到数据库"""
+def save_task_execution_to_db(execution_data: dict) -> str:
+    """保存任务执行记录到数据库，返回 execution_id"""
     try:
         new_execution = TaskExecution(**execution_data)
         with make_sync_session() as session:
             session.add(new_execution)
             session.commit()
-            logger.info("Task execution saved to database successfully")
-            return True
+            session.refresh(new_execution)
+            logger.info(f"Task execution saved to database: {new_execution.id}")
+            return new_execution.id
     except Exception as e:
         logger.error(f"Failed to save task execution to database: {str(e)}")
-        return False
+        return None
 
 
 def update_task_execution_status(execution_id: UUID, status: str, **kwargs) -> bool:

@@ -107,24 +107,15 @@ def execute_scheduled_task(task_schedule: TaskSchedule) -> bool:
             "status": "pending"
         }
         
-        if not save_task_execution_to_db(execution_data):
+        execution_id = save_task_execution_to_db(execution_data)
+        if not execution_id:
             logger.error(f"创建任务执行记录失败: {task_schedule.task_id}")
             return False
         
         # 异步执行任务
         celery_app.send_task(
             'execute_data_collection_task',
-            args=[
-                task_schedule.task_id,
-                execution_data["id"],
-                {
-                    "task_name": task.task_name,
-                    "task_type": task.task_type.value,
-                    "base_url": task.base_url,
-                    "extract_config": task.extract_config
-                },
-                "scheduled_task"
-            ]
+            args=[task_schedule.task_id, execution_id]
         )
         
         # 更新下次执行时间
