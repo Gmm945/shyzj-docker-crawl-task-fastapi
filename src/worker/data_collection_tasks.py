@@ -156,12 +156,17 @@ def _execute_crawler_task_with_docker(task_name: str, execution_id: str, config_
             if not config_saved:
                 raise Exception("配置文件处理失败")
         
+        # 从数据库获取配置文件路径
+        from .db_tasks import get_task_execution_by_id
+        execution = get_task_execution_by_id(execution_id)
+        config_path = execution.docker_config_path if execution and execution.docker_config_path else f"/tmp/task_configs/{execution_id}/config.json"
+        logger.info(f"使用配置文件路径: {config_path}")
+        
         # 启动Docker容器 - 从配置文件获取镜像名称
         docker_image = (cfg.get("docker_image") or settings.DOCKER_CRAWLER_IMAGE)
         if not docker_image:
             raise Exception("未配置 Docker 镜像名称，请在 .env 设置 DOCKER_CRAWLER_IMAGE 或在任务配置中提供 docker_image")
         logger.info(f"使用Docker镜像: {docker_image}")
-        config_path = f"/tmp/task_configs/{execution_id}/config.json"
         
         # 爬虫直接输出到HDFS，不需要本地挂载卷
         additional_volumes = {}
@@ -247,10 +252,15 @@ def _execute_api_task_with_docker(task_name: str, execution_id: str, config_data
             if not config_saved:
                 raise Exception("配置文件处理失败")
         
+        # 从数据库获取配置文件路径
+        from .db_tasks import get_task_execution_by_id
+        execution = get_task_execution_by_id(execution_id)
+        config_path = execution.docker_config_path if execution and execution.docker_config_path else f"/tmp/task_configs/{execution_id}/config.json"
+        logger.info(f"使用配置文件路径: {config_path}")
+        
         # 启动Docker容器 - 从配置文件获取镜像名称
         docker_image = config_data.get("docker_image", settings.DOCKER_API_IMAGE)
         logger.info(f"使用Docker镜像: {docker_image}")
-        config_path = f"/tmp/task_configs/{execution_id}/config.json"
         
         container_id = start_docker_task_container(
             UUID(execution_id),
@@ -332,10 +342,15 @@ def _execute_database_task_with_docker(task_name: str, execution_id: str, config
             if not config_saved:
                 raise Exception("配置文件处理失败")
         
+        # 从数据库获取配置文件路径
+        from .db_tasks import get_task_execution_by_id
+        execution = get_task_execution_by_id(execution_id)
+        config_path = execution.docker_config_path if execution and execution.docker_config_path else f"/tmp/task_configs/{execution_id}/config.json"
+        logger.info(f"使用配置文件路径: {config_path}")
+        
         # 启动Docker容器 - 从配置文件获取镜像名称
         docker_image = config_data.get("docker_image", settings.DOCKER_DATABASE_IMAGE)
         logger.info(f"使用Docker镜像: {docker_image}")
-        config_path = f"/tmp/task_configs/{execution_id}/config.json"
         
         # 数据库任务可能需要额外的卷挂载
         additional_volumes = {

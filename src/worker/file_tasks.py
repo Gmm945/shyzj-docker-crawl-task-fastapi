@@ -341,6 +341,19 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
     try:
         container_name = f"task-{execution_id}"
         
+        # 清理可能存在的旧容器
+        try:
+            if settings.is_local_docker:
+                subprocess.run(["docker", "rm", "-f", container_name], 
+                            capture_output=True, timeout=10)
+            else:
+                subprocess.run(["ssh", get_ssh_host_string(settings.DOCKER_HOST_IP),
+                            "docker", "rm", "-f", container_name],
+                            capture_output=True, timeout=10)
+            logger.info(f"清理旧容器: {container_name}")
+        except Exception as e:
+            logger.debug(f"清理旧容器失败或不存在: {e}")
+        
         # 构建 Docker 命令
         if settings.is_local_docker:
             # 本地环境，直接使用docker命令

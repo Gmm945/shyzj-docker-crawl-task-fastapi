@@ -27,6 +27,9 @@ class ExecutionStatus(str, enum.Enum):
 class ScheduleType(str, enum.Enum):
     IMMEDIATE = "immediate"
     SCHEDULED = "scheduled"
+    MINUTELY = "minutely"
+    HOURLY = "hourly"
+    DAILY = "daily"
     WEEKLY = "weekly"
     MONTHLY = "monthly"
 

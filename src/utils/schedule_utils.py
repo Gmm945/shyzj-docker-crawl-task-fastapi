@@ -22,6 +22,28 @@ class ScheduleUtils:
             scheduled_time = datetime.fromisoformat(config["datetime"])
             return scheduled_time if scheduled_time > now else None
         
+        elif schedule_type == ScheduleType.MINUTELY:
+            # 每N分钟执行：{"interval": 5}
+            interval = config.get("interval", 1)
+            return now + timedelta(minutes=interval)
+        
+        elif schedule_type == ScheduleType.HOURLY:
+            # 每N小时执行：{"interval": 2}
+            interval = config.get("interval", 1)
+            return now + timedelta(hours=interval)
+        
+        elif schedule_type == ScheduleType.DAILY:
+            # 每天指定时间执行：{"time": "09:00:00"}
+            time_str = config["time"]
+            hour, minute, second = map(int, time_str.split(":"))
+            next_time = now.replace(hour=hour, minute=minute, second=second, microsecond=0)
+            
+            # 如果今天的时间已过，则安排到明天
+            if next_time <= now:
+                next_time = next_time + timedelta(days=1)
+            
+            return next_time
+        
         elif schedule_type == ScheduleType.WEEKLY:
             # 周调度：{"days": [1, 3, 5], "time": "09:00:00"} # 1=周一
             days = config["days"]
@@ -93,6 +115,27 @@ class ScheduleUtils:
                     return False, "缺少datetime字段"
                 datetime.fromisoformat(config["datetime"])
                 return True, "定时执行配置有效"
+            
+            elif schedule_type == ScheduleType.MINUTELY:
+                interval = config.get("interval", 1)
+                if not isinstance(interval, int) or interval < 1:
+                    return False, "interval必须是大于0的整数"
+                return True, "分钟级调度配置有效"
+            
+            elif schedule_type == ScheduleType.HOURLY:
+                interval = config.get("interval", 1)
+                if not isinstance(interval, int) or interval < 1:
+                    return False, "interval必须是大于0的整数"
+                return True, "小时级调度配置有效"
+            
+            elif schedule_type == ScheduleType.DAILY:
+                if "time" not in config:
+                    return False, "缺少time字段"
+                time_str = config["time"]
+                hour, minute, second = map(int, time_str.split(":"))
+                if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+                    return False, "time格式无效"
+                return True, "每日调度配置有效"
             
             elif schedule_type == ScheduleType.WEEKLY:
                 if "days" not in config or "time" not in config:
