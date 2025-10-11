@@ -1,0 +1,90 @@
+from typing import List, Optional
+from uuid import UUID
+from sqlalchemy import select, desc
+from sqlalchemy.ext.asyncio import AsyncSession
+from loguru import logger
+
+from ..models.task import TaskSchedule
+
+
+async def get_schedule_by_id(db: AsyncSession, schedule_id: str) -> Optional[TaskSchedule]:
+    """根据ID获取调度"""
+    result = await db.execute(select(TaskSchedule).where(TaskSchedule.id == schedule_id))
+    return result.scalar_one_or_none()
+
+
+async def get_active_schedule_by_task_id(db: AsyncSession, task_id: str) -> Optional[TaskSchedule]:
+    """获取任务的活跃调度配置"""
+    result = await db.execute(
+        select(TaskSchedule).where(
+            TaskSchedule.task_id == task_id,
+            TaskSchedule.is_active == True
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_schedules_by_task_id(db: AsyncSession, task_id: str) -> List[TaskSchedule]:
+    """获取任务的所有调度配置"""
+    result = await db.execute(
+        select(TaskSchedule)
+        .where(TaskSchedule.task_id == task_id)
+        .order_by(desc(TaskSchedule.create_time))
+    )
+    return result.scalars().all()
+
+
+async def create_schedule(
+    db: AsyncSession,
+    task_id: str,
+    schedule_type: str,
+    schedule_config: dict,
+    next_run_time
+) -> TaskSchedule:
+    """创建调度配置"""
+    db_schedule = TaskSchedule(
+        task_id=task_id,
+        schedule_type=schedule_type,
+        schedule_config=schedule_config,
+        next_run_time=next_run_time,
+        is_active=True
+    )
+    db.add(db_schedule)
+    await db.commit()
+    await db.refresh(db_schedule)
+    logger.info(f"创建调度成功: {db_schedule.id}, 任务ID: {task_id}")
+    return db_schedule
+
+
+async def update_schedule_status(
+    db: AsyncSession,
+    schedule: TaskSchedule,
+    is_active: bool,
+    next_run_time=None
+) -> TaskSchedule:
+    """更新调度状态"""
+    schedule.is_active = is_active
+    if next_run_time is not None:
+        schedule.next_run_time = next_run_time
+    await db.commit()
+    logger.info(f"更新调度状态: {schedule.id}, 激活状态: {is_active}")
+    return schedule
+
+
+async def delete_schedule(db: AsyncSession, schedule: TaskSchedule) -> None:
+    """删除调度"""
+    schedule_id = schedule.id
+    await db.delete(schedule)
+    await db.commit()
+    logger.info(f"删除调度成功: {schedule_id}")
+
+
+async def get_all_active_schedules(db: AsyncSession) -> List[TaskSchedule]:
+    """获取所有活跃的调度配置"""
+    result = await db.execute(
+        select(TaskSchedule)
+        .where(TaskSchedule.is_active == True)
+        .order_by(TaskSchedule.next_run_time)
+    )
+    return result.scalars().all()
+

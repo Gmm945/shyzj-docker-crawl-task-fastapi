@@ -116,8 +116,13 @@ class ScheduleManager:
     def _execute_scheduled_task(self, schedule: TaskSchedule):
         """执行调度任务"""
         try:
+            # 使用线程池执行异步任务，避免事件循环冲突
             import asyncio
-            asyncio.run(self._execute_scheduled_task_async(schedule))
+            import concurrent.futures
+            
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(asyncio.run, self._execute_scheduled_task_async(schedule))
+                future.result(timeout=30)  # 最多等待30秒
         except Exception as e:
             logger.error(f"执行调度任务失败: {e}")
     
@@ -161,10 +166,21 @@ class ScheduleManager:
             await db.commit()
             await db.refresh(db_execution)
             
+            # 构建任务配置数据
+            config_data = {
+                "task_name": task.task_name,
+                "task_type": task.task_type,
+                "base_url": task.base_url,
+                "base_url_params": task.base_url_params,
+                "need_user_login": task.need_user_login,
+                "extract_config": task.extract_config,
+                "description": task.description,
+            }
+            
             # 提交到Celery执行
             celery_app.send_task(
                 'execute_data_collection_task',
-                args=[db_execution.id]
+                args=[str(schedule.task_id), str(db_execution.id), config_data]
             )
             
             # 更新下次执行时间

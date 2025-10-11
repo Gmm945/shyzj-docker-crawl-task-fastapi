@@ -220,7 +220,7 @@ class HeartbeatClient:
             
             completion_data = {
                 "execution_id": self.execution_id,
-                "container_id": self.container_id,
+                "container_name": self.container_id,  # API要求container_name字段
                 "success": success,
                 "result_data": {
                     "crawl_summary": progress,

@@ -96,8 +96,10 @@ def execute_data_collection_task_impl(
             # 最终的成功/失败状态将由容器的completion接口通知更新
         self.update_status(100, "SUCCESS", "Docker容器启动成功，等待任务执行完成", namespace=namespace)
         
-        # 清理工作空间（仅按执行ID）
-        cleanup_task_workspace(UUID(execution_id))
+        # 注意：不在这里清理工作空间！
+        # 配置文件需要保留给容器使用，容器完成后会自动清理
+        # 或由定时清理任务统一清理旧文件
+        # cleanup_task_workspace(UUID(execution_id))
         
         return {
             "success": True,
@@ -135,13 +137,15 @@ def _execute_crawler_task_with_docker(task_name: str, execution_id: str, config_
         
         # 验证配置
         cfg = config_data or {}
+        logger.info(f"收到配置数据: {cfg is not None}, keys: {list(cfg.keys()) if cfg else '空'}")
+        
         if cfg:
             is_valid, error_msg = validate_task_config(cfg)
             if not is_valid:
                 raise ValueError(f"配置验证失败: {error_msg}")
         
-        # 处理配置文件
-        if cfg:
+        # 处理配置文件 - 强制创建，即使配置为空
+        if True:  # 总是创建配置文件
             # 为测试与稳定心跳，若未提供目标与延迟，设置约1分钟的默认爬取参数
             try:
                 if cfg.get("task_type") == "docker-crawl":

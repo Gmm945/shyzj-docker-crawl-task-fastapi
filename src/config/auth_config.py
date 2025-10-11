@@ -121,13 +121,11 @@ class AuthSettings(BaseSettings):
         if self.API_BASE_URL:
             return self.API_BASE_URL.rstrip('/')
         
-        # 如果是本地环境，使用本地方法
+        # 如果是本地环境，容器需要使用host.docker.internal访问宿主机
         if self.is_local_docker:
-            is_running_in_docker = os.path.exists('/.dockerenv')
-            if is_running_in_docker:
-                return f"http://host.docker.internal:{self.API_PORT}"
-            else:
-                return f"http://localhost:{self.API_PORT}"
+            # 容器内总是使用host.docker.internal访问宿主机API
+            # 这个URL是传给容器使用的，不是在Worker中使用的
+            return f"http://host.docker.internal:{self.API_PORT}"
         # 非本地环境必须配置API_BASE_URL
         raise ValueError("非本地环境必须配置 API_BASE_URL，请设置环境变量 API_BASE_URL")
     

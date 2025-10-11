@@ -56,7 +56,37 @@ class TaskBase(BaseModel):
 
 
 class TaskCreate(TaskBase):
-    pass
+    """创建任务的请求模型"""
+    
+    # 继承 TaskBase 的所有字段，并添加字段级别的验证和说明
+    task_name: str = Field(..., min_length=1, max_length=100, description="任务名称，必填，1-100字符")
+    task_type: TaskType = Field(..., description="任务类型，必填")
+    base_url: Optional[str] = Field(None, max_length=500, description="基础URL，最大500字符")
+    base_url_params: Optional[List[UrlParam]] = Field(default=None, description="URL参数列表")
+    need_user_login: int = Field(default=0, ge=0, le=1, description="是否需要用户登录，0-否，1-是")
+    extract_config: Optional[ExtractConfig] = Field(default=None, description="数据提取配置")
+    description: Optional[str] = Field(None, max_length=500, description="任务描述，最大500字符")
+    
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "task_name": "示例API任务",
+                    "task_type": "api",
+                    "base_url": "https://api.example.com/data",
+                    "base_url_params": [],
+                    "need_user_login": 0,
+                    "extract_config": {
+                        "extract_method": "api",
+                        "listened_uri": "/data",
+                        "extract_dataset_idtf": "api_data",
+                        "extract_fields": []
+                    },
+                    "description": "这是一个示例API数据采集任务"
+                }
+            ]
+        }
+    }
 
 
 class TaskUpdate(BaseModel):
@@ -105,12 +135,41 @@ class TaskExecutionResponse(BaseModel):
         from_attributes = True
 
 
-class ScheduleConfig(BaseModel):
-    # 即时执行：{}
-    # 指定时间：{"datetime": "2024-01-01 12:00:00"}
-    # 周调度：{"days": [1, 3, 5], "time": "09:00:00"} # 1=周一
-    # 月调度：{"dates": [1, 15], "time": "09:00:00"} # 每月1号和15号
+class ImmediateScheduleConfig(BaseModel):
+    """即时执行配置 - 空配置"""
     pass
+
+
+class DatetimeScheduleConfig(BaseModel):
+    """指定时间执行配置"""
+    datetime: str = Field(..., description="执行时间，格式: YYYY-MM-DD HH:MM:SS")
+
+
+class WeeklyScheduleConfig(BaseModel):
+    """周调度配置"""
+    days: List[int] = Field(..., description="星期几执行，1=周一, 7=周日", min_items=1)
+    time: str = Field(..., description="执行时间，格式: HH:MM:SS")
+
+
+class MonthlyScheduleConfig(BaseModel):
+    """月调度配置"""
+    dates: List[int] = Field(..., description="每月几号执行，1-31", min_items=1)
+    time: str = Field(..., description="执行时间，格式: HH:MM:SS")
+
+
+class DailyScheduleConfig(BaseModel):
+    """日调度配置"""
+    time: str = Field(..., description="每天执行时间，格式: HH:MM:SS")
+
+
+class IntervalScheduleConfig(BaseModel):
+    """间隔调度配置"""
+    interval: int = Field(..., description="间隔时间（秒）", gt=0)
+
+
+class CronScheduleConfig(BaseModel):
+    """Cron表达式调度配置"""
+    cron_expression: str = Field(..., description="Cron表达式，如: 0 0 * * *")
 
 
 class TaskScheduleCreate(BaseModel):

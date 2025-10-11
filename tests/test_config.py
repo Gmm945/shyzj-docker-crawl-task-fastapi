@@ -38,7 +38,12 @@ class TestConfig:
             "base_url": "https://httpbin.org/json",
             "base_url_params": [],
             "need_user_login": 0,
-            "extract_config": [],
+            "extract_config": {
+                "extract_method": "api",
+                "listened_uri": "/json",
+                "extract_dataset_idtf": "test_data",
+                "extract_fields": []
+            },
             "description": "API测试任务"
         },
         "docker_crawl_task": {
@@ -46,7 +51,12 @@ class TestConfig:
             "base_url": "https://httpbin.org/json",
             "base_url_params": [],
             "need_user_login": 0,
-            "extract_config": [],
+            "extract_config": {
+                "extract_method": "api",
+                "listened_uri": "/json",
+                "extract_dataset_idtf": "test_data",
+                "extract_fields": []
+            },
             "description": "Docker爬虫测试任务"
         },
         "database_task": {
@@ -54,7 +64,12 @@ class TestConfig:
             "base_url": "localhost:3306",
             "base_url_params": [],
             "need_user_login": 0,
-            "extract_config": [],
+            "extract_config": {
+                "extract_method": "api",
+                "listened_uri": "",
+                "extract_dataset_idtf": "test_data",
+                "extract_fields": []
+            },
             "description": "数据库测试任务"
         }
     }

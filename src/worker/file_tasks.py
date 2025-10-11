@@ -376,6 +376,13 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
             ]
         
         # 添加配置文件挂载
+        # ⚠️ 重要：必须确保宿主机上的配置文件存在，否则Docker会创建目录
+        if not os.path.exists(config_path):
+            raise Exception(f"配置文件不存在: {config_path}，无法启动容器")
+        if not os.path.isfile(config_path):
+            raise Exception(f"配置路径不是文件: {config_path}，无法启动容器")
+        
+        logger.info(f"✅ 配置文件存在且有效: {config_path}")
         base_command.extend([
             "-v", f"{config_path}:/app/config.json:ro"
         ])

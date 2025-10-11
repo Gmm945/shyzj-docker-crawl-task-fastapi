@@ -173,7 +173,6 @@ async def get_task(
     if hasattr(task_data, 'running_execution') and task_data.running_execution:
         execution = task_data.running_execution
         if execution.docker_port:
-            from ...config.auth_config import settings
             docker_host = settings.DOCKER_HOST_IP
             execution.docker_access_url = f"http://{docker_host}:{execution.docker_port}"
     
@@ -300,10 +299,8 @@ async def execute_task_now(
         "extract_config": task.extract_config,
         "description": task.description,
     }
-    
     # 提交到Celery执行
     execute_data_collection_task.delay(str(task.id), str(db_execution.id), config_data)
-    
     return ResponseModel(message="任务已提交执行", data={"execution_id": db_execution.id})
 
 @router.post("/{task_id}/stop")
