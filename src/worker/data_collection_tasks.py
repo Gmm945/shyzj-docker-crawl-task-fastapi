@@ -43,6 +43,7 @@ def execute_data_collection_task_impl(
 ):
     """执行数据采集任务实现"""
     try:
+        logger.info(f"Worker接收到的config_data: {config_data}")
         self.update_status(0, "PENDING", "开始执行数据采集任务", namespace=namespace)
         
         # 在同一个会话中获取任务和执行者信息

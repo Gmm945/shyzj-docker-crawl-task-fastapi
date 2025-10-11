@@ -123,11 +123,22 @@ class ScheduleManager:
             from uuid import uuid4
             
             with make_sync_session() as session:
-                # 获取任务信息
-                task = get_task_by_id(schedule.task_id)
+                # 获取任务信息 - 直接在session中查询并提取所有属性
+                from ..data_platform_api.models.task import Task
+                task = session.query(Task).filter(Task.id == schedule.task_id).first()
                 if not task:
                     logger.warning(f"调度任务不存在: {schedule.task_id}")
                     return
+                
+                # 立即提取所有需要的属性到普通Python对象
+                task_name = task.task_name
+                task_type = task.task_type
+                base_url = task.base_url
+                base_url_params = task.base_url_params if task.base_url_params else []
+                need_user_login = task.need_user_login
+                extract_config = task.extract_config if task.extract_config else {}
+                description = task.description
+                creator_id = task.creator_id
                 
                 # 检查是否已有正在运行的任务
                 from sqlalchemy import and_
@@ -141,16 +152,16 @@ class ScheduleManager:
                 ).first()
                 
                 if running_execution:
-                    logger.info(f"任务 {task.task_name} 正在执行中，跳过此次调度")
+                    logger.info(f"任务 {task_name} 正在执行中，跳过此次调度")
                     return
                 
                 # 创建执行记录
                 timestamp = int(datetime.now().timestamp())
-                execution_name = f"{timestamp}_{task.task_name}"
+                execution_name = f"{timestamp}_{task_name}"
                 
                 db_execution = TaskExecution(
                     task_id=schedule.task_id,
-                    executor_id=task.creator_id,
+                    executor_id=creator_id,
                     execution_name=execution_name,
                     status=ExecutionStatus.PENDING
                 )
@@ -158,16 +169,17 @@ class ScheduleManager:
                 session.commit()
                 session.refresh(db_execution)
                 
-                # 构建任务配置数据
+                # 构建任务配置数据 - 使用已提取的属性
                 config_data = {
-                    "task_name": task.task_name,
-                    "task_type": task.task_type,
-                    "base_url": task.base_url,
-                    "base_url_params": task.base_url_params,
-                    "need_user_login": task.need_user_login,
-                    "extract_config": task.extract_config,
-                    "description": task.description,
+                    "task_name": task_name,
+                    "task_type": task_type,
+                    "base_url": base_url,
+                    "base_url_params": base_url_params,
+                    "need_user_login": need_user_login,
+                    "extract_config": extract_config,
+                    "description": description,
                 }
+                logger.info(f"调度器构建的config_data: {config_data}")
                 
                 # 提交到Celery执行
                 celery_app.send_task(

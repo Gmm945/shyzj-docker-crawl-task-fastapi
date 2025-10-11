@@ -90,6 +90,16 @@ def get_task_by_id(task_id: str) -> Optional[Task]:
     try:
         with make_sync_session() as session:
             task = session.query(Task).filter(Task.id == task_id).first()
+            if task:
+                # 在session关闭前访问所有属性，避免lazy loading问题
+                _ = task.task_name
+                _ = task.task_type
+                _ = task.base_url
+                _ = task.base_url_params
+                _ = task.need_user_login
+                _ = task.extract_config
+                _ = task.description
+                _ = task.creator_id
             return task
     except Exception as e:
         logger.error(f"Failed to get task: {str(e)}")

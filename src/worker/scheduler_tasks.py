@@ -86,37 +86,62 @@ def get_scheduled_tasks() -> List[TaskSchedule]:
 def execute_scheduled_task(task_schedule: TaskSchedule) -> bool:
     """执行单个定时任务"""
     try:
-        # 获取任务信息
-        task = get_task_by_id(task_schedule.task_id)
-        if not task:
-            logger.error(f"任务不存在: {task_schedule.task_id}")
-            return False
-        
-        # 检查任务是否已经在运行
-        running_executions = get_running_task_executions()
-        for execution in running_executions:
-            if execution.task_id == task_schedule.task_id:
-                logger.info(f"任务 {task_schedule.task_id} 正在运行中，跳过")
-                return True
-        
-        # 创建任务执行记录
-        execution_data = {
-            "task_id": task_schedule.task_id,
-            "executor_id": task.creator_id,  # 使用任务创建者作为执行者
-            "execution_name": f"Scheduled execution for {task.task_name}",
-            "status": "pending"
-        }
-        
-        execution_id = save_task_execution_to_db(execution_data)
-        if not execution_id:
-            logger.error(f"创建任务执行记录失败: {task_schedule.task_id}")
-            return False
-        
-        # 异步执行任务
-        celery_app.send_task(
-            'execute_data_collection_task',
-            args=[task_schedule.task_id, execution_id]
-        )
+        # 获取任务信息 - 在session中立即提取所有属性
+        with make_sync_session() as session:
+            from ..data_platform_api.models.task import Task
+            task = session.query(Task).filter(Task.id == task_schedule.task_id).first()
+            if not task:
+                logger.error(f"任务不存在: {task_schedule.task_id}")
+                return False
+            
+            # 立即提取所有需要的属性到普通Python对象
+            task_id = str(task.id)
+            task_name = task.task_name
+            task_type = task.task_type
+            base_url = task.base_url
+            base_url_params = task.base_url_params if task.base_url_params else []
+            need_user_login = task.need_user_login
+            extract_config = task.extract_config if task.extract_config else {}
+            description = task.description
+            creator_id = task.creator_id
+            
+            # 检查任务是否已经在运行
+            running_executions = get_running_task_executions()
+            for execution in running_executions:
+                if execution.task_id == task_schedule.task_id:
+                    logger.info(f"任务 {task_schedule.task_id} 正在运行中，跳过")
+                    return True
+            
+            # 创建任务执行记录
+            execution_data = {
+                "task_id": task_schedule.task_id,
+                "executor_id": creator_id,  # 使用任务创建者作为执行者
+                "execution_name": f"Scheduled execution for {task_name}",
+                "status": "pending"
+            }
+            
+            execution_id = save_task_execution_to_db(execution_data)
+            if not execution_id:
+                logger.error(f"创建任务执行记录失败: {task_schedule.task_id}")
+                return False
+            
+            # 构建任务配置数据
+            config_data = {
+                "task_name": task_name,
+                "task_type": task_type,
+                "base_url": base_url,
+                "base_url_params": base_url_params,
+                "need_user_login": need_user_login,
+                "extract_config": extract_config,
+                "description": description,
+            }
+            logger.info(f"Celery Beat构建的config_data: {config_data}")
+            
+            # 异步执行任务 - 传递config_data
+            celery_app.send_task(
+                'execute_data_collection_task',
+                args=[task_id, execution_id, config_data]
+            )
         
         # 更新下次执行时间
         update_next_run_time(task_schedule)
