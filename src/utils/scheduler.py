@@ -104,7 +104,8 @@ class ScheduleManager:
         
         with self.lock:
             for schedule_id, schedule in self.schedules.items():
-                if schedule.next_run_time and schedule.next_run_time <= now:
+                # immediate调度立即执行，其他调度按时间执行
+                if schedule.schedule_type == "immediate" or (schedule.next_run_time and schedule.next_run_time <= now):
                     to_execute.append(schedule)
         
         for schedule in to_execute:
@@ -116,13 +117,76 @@ class ScheduleManager:
     def _execute_scheduled_task(self, schedule: TaskSchedule):
         """执行调度任务"""
         try:
-            # 使用线程池执行异步任务，避免事件循环冲突
-            import asyncio
-            import concurrent.futures
+            # 使用同步数据库操作避免事件循环冲突
+            from ..worker.db import make_sync_session
+            from ..worker.db_tasks import get_task_by_id, get_user_by_id, save_task_execution_to_db
+            from uuid import uuid4
             
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(asyncio.run, self._execute_scheduled_task_async(schedule))
-                future.result(timeout=30)  # 最多等待30秒
+            with make_sync_session() as session:
+                # 获取任务信息
+                task = get_task_by_id(schedule.task_id)
+                if not task:
+                    logger.warning(f"调度任务不存在: {schedule.task_id}")
+                    return
+                
+                # 检查是否已有正在运行的任务
+                from sqlalchemy import and_
+                from ..data_platform_api.models.task import TaskExecution, ExecutionStatus
+                
+                running_execution = session.query(TaskExecution).filter(
+                    and_(
+                        TaskExecution.task_id == schedule.task_id,
+                        TaskExecution.status == ExecutionStatus.RUNNING
+                    )
+                ).first()
+                
+                if running_execution:
+                    logger.info(f"任务 {task.task_name} 正在执行中，跳过此次调度")
+                    return
+                
+                # 创建执行记录
+                timestamp = int(datetime.now().timestamp())
+                execution_name = f"{timestamp}_{task.task_name}"
+                
+                db_execution = TaskExecution(
+                    task_id=schedule.task_id,
+                    executor_id=task.creator_id,
+                    execution_name=execution_name,
+                    status=ExecutionStatus.PENDING
+                )
+                session.add(db_execution)
+                session.commit()
+                session.refresh(db_execution)
+                
+                # 构建任务配置数据
+                config_data = {
+                    "task_name": task.task_name,
+                    "task_type": task.task_type,
+                    "base_url": task.base_url,
+                    "base_url_params": task.base_url_params,
+                    "need_user_login": task.need_user_login,
+                    "extract_config": task.extract_config,
+                    "description": task.description,
+                }
+                
+                # 提交到Celery执行
+                celery_app.send_task(
+                    'execute_data_collection_task',
+                    args=[str(schedule.task_id), str(db_execution.id), config_data]
+                )
+                
+                logger.info(f"调度执行任务: {task.task_name} (execution_id: {db_execution.id})")
+                
+                # immediate调度执行后需要被移除
+                if schedule.schedule_type == "immediate":
+                    schedule.is_active = False
+                    session.add(schedule)
+                    session.commit()
+                    with self.lock:
+                        if schedule.id in self.schedules:
+                            del self.schedules[schedule.id]
+                    logger.info(f"immediate调度已执行并移除: {schedule.id}")
+                
         except Exception as e:
             logger.error(f"执行调度任务失败: {e}")
     

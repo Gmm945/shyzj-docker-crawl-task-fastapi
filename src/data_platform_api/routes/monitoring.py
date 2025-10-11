@@ -133,8 +133,11 @@ async def task_completion(
         await db.commit()
         
         # 清理Redis中的心跳数据
-        heartbeat_key_parts = [str(execution_id)]
-        cache.delete_cache(HEARTBEAT_PREFIX.rstrip(":"), heartbeat_key_parts)
+        try:
+            heartbeat_key_parts = [str(execution_id)]
+            await cache.delete_cache(HEARTBEAT_PREFIX.rstrip(":"), heartbeat_key_parts)
+        except Exception as cache_error:
+            logger.warning(f"清理心跳缓存失败: {cache_error}")
         
         logger.info(f"任务完成通知: execution_id={execution_id}, success={success}")
         
