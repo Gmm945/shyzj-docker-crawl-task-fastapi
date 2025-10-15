@@ -15,23 +15,37 @@ cd shyzj-docker-crawl-task-fastapi
 pdm install
 
 # 3. 初始化数据库
-pdm run db:init
+pdm run db:reset
 
-# 4. 启动服务
-pdm run dev:start      # API服务
+# 4. 初始化权限数据
+pdm run python -m src.db_util.init_data
+
+# 5. 启动服务
+pdm run start          # API服务（包含权限系统）
 pdm run celery:all     # Celery服务
 ```
 
 ### 📚 核心文档
 
+#### 系统架构与配置
 - **[项目架构](项目架构.md)** - 系统架构设计和模块说明
 - **[安装配置](安装配置.md)** - 完整的安装、配置和部署指南
 - **[数据库管理](数据库管理.md)** - 数据库初始化、升级和管理
+
+#### 权限与安全
+- **[权限系统使用手册](权限系统使用手册.md)** - Casbin 权限管理完整指南 ⭐ 新增
+
+#### 任务管理
 - **[任务执行](任务执行.md)** - Docker容器化任务执行方案
 - **[调度执行说明](调度执行说明.md)** - 任务调度配置和使用指南
-- **[Celery配置说明](Celery配置说明.md)** - Celery 和 Beat 配置详解 ⭐ 新增
+- **[调度类型快速参考](调度类型快速参考.md)** - 调度类型速查表
+
+#### 监控与维护
+- **[Celery配置说明](Celery配置说明.md)** - Celery 和 Beat 配置详解
 - **[心跳监控配置](心跳监控配置.md)** - 任务监控和心跳机制
-- **[API文档](http://localhost:8000/docs)** - 自动生成的API接口文档
+
+#### API文档
+- **[API文档](http://localhost:8089/api/v1/docs)** - 自动生成的API接口文档
 
 ## 🏗️ 系统架构
 
@@ -48,7 +62,8 @@ pdm run celery:all     # Celery服务
 - 🐳 **容器化执行** - 在Docker容器中执行爬虫、API、数据库任务
 - 💓 **心跳监控** - 实时监控任务执行状态和进度
 - 🔄 **异步处理** - 基于Celery的异步任务队列处理
-- 👤 **用户管理** - JWT认证和基于角色的权限管理
+- 👤 **用户管理** - JWT认证和用户管理
+- 🔐 **权限管理** - 基于Casbin的RBAC权限控制系统
 
 ## 🛠️ 开发工具
 
@@ -148,10 +163,13 @@ tail -f logs/celery.log
 pdm install
 
 # 2. 初始化数据库
-pdm run db:init
+pdm run db:reset
 
-# 3. 启动服务
-pdm run dev:start
+# 3. 初始化权限数据
+pdm run python -m src.db_util.init_data
+
+# 4. 启动服务
+pdm run start
 pdm run celery:all
 ```
 

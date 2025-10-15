@@ -6,7 +6,7 @@ from .routes import (
     monitoring,
     scheduler,
 )
-from ..user_manage.routes import user, auth
+from ..user_manage.routes import user, auth, role
 
 api_router = APIRouter()
 
@@ -16,6 +16,7 @@ api_router.include_router(common.router, tags=["common"], prefix="/common")
 # 用户管理模块
 api_router.include_router(auth.router, tags=["user_manage"], prefix="/auth")
 api_router.include_router(user.router, tags=["user_manage"], prefix="/user")
+api_router.include_router(role.router, tags=["role_manage"], prefix="/role")
 
 # 业务模块
 api_router.include_router(tasks.router, tags=["task_manage"], prefix="/task")

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, status, Depends
 from fastapi.responses import Response
 from sqlalchemy.sql import text
 from loguru import logger
@@ -6,10 +6,12 @@ from loguru import logger
 from ...db_util.core import DBSessionDep
 from ...db_util.db import sessionmanager
 from ...common.schemas.base import ResponseModel
+from ...user_manage.models.user import User
+from ...user_manage.service.security import check_permissions
 from ..service.common import health_check, get_system_stats
 
 router = APIRouter()
-_obj = 'Common'
+obj = 'Common'  # 资源对象名称
 
 
 @router.get("/health")
@@ -68,7 +70,10 @@ async def readiness_check():
 
 
 @router.get("/stats")
-async def get_system_stats_endpoint(db: DBSessionDep):
+async def get_system_stats_endpoint(
+    db: DBSessionDep,
+    user: User = Depends(check_permissions(obj))
+):
     """获取系统统计信息"""
     stats = await get_system_stats(db)
     res = ResponseModel(message="获取系统统计成功", data=stats)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks, Depends
 from sqlalchemy import desc, select
 from uuid import UUID
 from datetime import datetime, timedelta
@@ -8,12 +8,15 @@ from ...db_util.core import DBSessionDep, CacheManager
 from ...db_util.db import sessionmanager
 from ...config.auth_config import settings
 from ...worker.main import check_heartbeat_timeout
+from ...user_manage.models.user import User
+from ...user_manage.service.security import check_permissions
 
 from ..models.task import TaskExecution, ExecutionStatus
 from ..schemas.common import HeartbeatRequest, CompletionRequest, Response
 
 
 router = APIRouter()
+obj = 'Monitoring'  # 资源对象名称
 
 # Redis键前缀
 HEARTBEAT_PREFIX = "heartbeat:"
@@ -155,7 +158,8 @@ async def task_completion(
 async def get_execution_status(
     execution_id: str,
     db: DBSessionDep,
-    cache: CacheManager
+    cache: CacheManager,
+    user: User = Depends(check_permissions(obj))
 ):
     """获取执行状态（优先从Redis获取实时数据）"""
     try:
@@ -204,7 +208,8 @@ async def get_execution_status(
 async def get_active_executions(
     db: DBSessionDep,
     cache: CacheManager,
-    limit: int = 100
+    limit: int = 100,
+    user: User = Depends(check_permissions(obj))
 ):
     """获取活跃的执行任务（包含实时心跳信息）"""
     try:
@@ -256,7 +261,8 @@ async def get_active_executions(
 @router.get("/statistics")
 async def get_monitoring_statistics(
     db: DBSessionDep,
-    days: int = 7
+    days: int = 7,
+    user: User = Depends(check_permissions(obj))
 ):
     """获取监控统计数据"""
     try:

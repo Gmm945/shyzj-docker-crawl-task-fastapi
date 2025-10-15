@@ -35,6 +35,7 @@ async def lifespan(app: FastAPI):
         logger.info("任务调度器启动完成")
         
         logger.info("数据采集任务管理系统启动完成")
+        logger.info("💡 Casbin 权限系统采用按需加载模式")
         
     except Exception as e:
         logger.error(f"系统启动失败: {e}")
@@ -96,7 +97,8 @@ class CharsetMiddleware(BaseHTTPMiddleware):
             response.headers["Content-Type"] = f"{response.media_type}; charset=utf-8"
         return response
 
-app.add_middleware(CharsetMiddleware)
+# 暂时禁用 CharsetMiddleware 进行测试
+# app.add_middleware(CharsetMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=settings.APP_SECRET_KEY)
 
 # 全局异常处理

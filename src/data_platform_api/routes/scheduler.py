@@ -7,6 +7,7 @@ from ...db_util.core import DBSessionDep
 from ...user_manage.models.user import User
 from ...common.schemas.base import ResponseModel
 from ...user_manage.routes.auth import get_current_active_user
+from ...user_manage.service.security import check_permissions
 from ...utils.scheduler import schedule_manager
 from ...utils.schedule_utils import ScheduleUtils
 
@@ -23,13 +24,13 @@ from ..service.scheduler import (
 
 
 router = APIRouter()
-_obj = 'Scheduler'
+obj = 'Scheduler'  # 资源对象名称
 
 @router.post("/")
 async def create_task_schedule(
     schedule_data: TaskScheduleCreate,
     db: DBSessionDep,
-    user: User = Depends(get_current_active_user)
+    user: User = Depends(check_permissions(obj))
 ):
     """
     创建任务调度
@@ -72,7 +73,7 @@ async def create_task_schedule(
 async def get_task_schedules(
     task_id: UUID,
     db: DBSessionDep,
-    user: User = Depends(get_current_active_user)
+    user: User = Depends(check_permissions(obj))
 ):
     """
     获取任务的调度配置
@@ -105,7 +106,7 @@ async def get_task_schedules(
 async def toggle_schedule(
     schedule_id: str,
     db: DBSessionDep,
-    user: User = Depends(get_current_active_user)
+    user: User = Depends(check_permissions(obj))
 ):
     """
     启用/禁用调度
@@ -159,7 +160,7 @@ async def toggle_schedule(
 async def delete_schedule(
     schedule_id: str,
     db: DBSessionDep,
-    user: User = Depends(get_current_active_user)
+    user: User = Depends(check_permissions(obj))
 ):
     """
     删除调度

@@ -10,6 +10,7 @@ from ...db_util.core import DBSessionDep
 from ...user_manage.models.user import User
 from ...common.schemas.base import ResponseModel
 from ...user_manage.routes.auth import get_current_active_user
+from ...user_manage.service.security import check_permissions
 from ...worker.main import execute_data_collection_task, stop_docker_container
 from ..models.task import Task, TaskStatus, ExecutionStatus
 from ..schemas.task import (
@@ -36,14 +37,14 @@ from ..service.task import (
 )
 
 router = APIRouter()
-_obj = 'Task'
+obj = 'Task'  # 资源对象名称
 
 
 @router.post("/add")
 async def add_task(
     req_body: TaskCreate,
     db: DBSessionDep,
-    user: User = Depends(get_current_active_user)
+    user: User = Depends(check_permissions(obj))
 ):
     """
     创建新任务
@@ -99,7 +100,7 @@ async def get_task_list(
     sort_bys: Optional[List[str]] = Query(["create_time"]),
     sort_orders: Optional[List[str]] = Query(["desc"]),
     pagination: TaskPagination = Depends(),
-    user: User = Depends(get_current_active_user)
+    user: User = Depends(check_permissions(obj))
 ):
     """
     获取任务列表。支持按状态筛选，支持按任务名称模糊搜索。
@@ -146,7 +147,7 @@ async def get_task_list(
 async def get_task(
     task_id: UUID,
     db: DBSessionDep,
-    user: User = Depends(get_current_active_user)
+    user: User = Depends(check_permissions(obj))
 ):
     """
     获取任务详情
@@ -183,7 +184,7 @@ async def update_task(
     task_id: UUID,
     task_data: TaskUpdate,
     db: DBSessionDep,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(check_permissions(obj))
 ):
     """更新任务"""
     # 使用service层函数进行更新
@@ -214,7 +215,7 @@ async def update_task(
 async def delete_task(
     task_id: UUID,
     db: DBSessionDep,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(check_permissions(obj))
 ):
     """删除任务"""
     # 使用service层函数进行删除
@@ -245,7 +246,7 @@ async def delete_task(
 async def execute_task_now(
     task_id: UUID,
     db: DBSessionDep,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(check_permissions(obj, "EXECUTE"))
 ):
     """立即执行任务"""
     # 使用service层函数获取任务
@@ -307,7 +308,7 @@ async def execute_task_now(
 async def stop_task(
     task_id: UUID,
     db: DBSessionDep,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(check_permissions(obj, "STOP"))
 ):
     """停止正在执行的任务"""
     # 使用service层函数停止任务
@@ -345,7 +346,7 @@ async def get_task_executions(
     page: int = Query(1, ge=1, description="页码，从1开始"),
     page_size: int = Query(20, ge=1, le=100, description="每页大小"),
     status: Optional[ExecutionStatus] = Query(None, description="执行状态筛选"),
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(check_permissions(obj))
 ):
     """获取任务执行记录"""
     # 检查任务权限
@@ -382,7 +383,7 @@ async def get_task_executions(
 async def get_task_status(
     task_id: UUID,
     db: DBSessionDep,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(check_permissions(obj))
 ):
     """获取任务详细状态信息"""
     # 使用service层函数获取任务状态信息
@@ -408,7 +409,7 @@ async def get_task_status(
 async def activate_task(
     task_id: UUID,
     db: DBSessionDep,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(check_permissions(obj))
 ):
     """激活任务"""
     # 使用service层函数激活任务
@@ -439,7 +440,7 @@ async def activate_task(
 async def deactivate_task(
     task_id: UUID,
     db: DBSessionDep,
-    current_user: User = Depends(get_current_active_user)
+    current_user: User = Depends(check_permissions(obj))
 ):
     """停用任务"""
     # 使用service层函数停用任务

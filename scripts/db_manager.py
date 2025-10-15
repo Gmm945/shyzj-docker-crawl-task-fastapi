@@ -21,6 +21,8 @@ from sqlalchemy.orm import sessionmaker
 from src.data_platform_api.models.base import BaseModel
 from src.data_platform_api.models.task import Task, TaskExecution, TaskSchedule
 from src.user_manage.models.user import User
+from src.user_manage.models.casbin import CasbinRule, CasbinObject, CasbinAction, CasbinPermission
+from src.user_manage.models.role import Role, MidUserRole
 
 class DatabaseManager:
     def __init__(self):

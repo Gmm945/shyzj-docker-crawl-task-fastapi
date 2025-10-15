@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.orm import DeclarativeBase
 from loguru import logger
+import casbin
+from casbin_async_sqlalchemy_adapter import Adapter
 from ..config.auth_config import settings
 
 warnings.filterwarnings('ignore')
@@ -74,6 +76,20 @@ class DatabaseSessionManager:
 
 # 创建数据库会话管理器
 sessionmanager = DatabaseSessionManager(DATABASE_URL, settings.database_engine_kwargs)
+
+# 创建 Casbin Adapter
+adapter = Adapter(sessionmanager._engine)
+
+async def get_casbin_e():
+    """
+    获取 Casbin Enforcer
+    每次调用都创建新的 enforcer 并加载策略（参照 aks-management 实现）
+    """
+    # 加载 casbin 模型配置文件
+    model_path = os.path.join(BASE_DIR, 'rbac_model.conf')
+    enforcer = casbin.AsyncEnforcer(model_path, adapter)
+    await enforcer.load_policy()
+    return enforcer
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
     """获取异步数据库会话的依赖注入函数"""
