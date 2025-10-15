@@ -14,46 +14,15 @@ from ...config.auth_config import settings
 router = APIRouter()
 _obj = 'Auth'
 
-# 根据认证开关决定是否启用 OAuth2
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token") if settings.ENABLE_AUTH else None
+# OAuth2 认证方案
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
 
 async def get_current_active_user(
     db: DBSessionDep,
-    token: str = Depends(oauth2_scheme) if settings.ENABLE_AUTH else None
+    token: str = Depends(oauth2_scheme)
 ) -> User:
     """获取当前活跃用户"""
-    # 如果认证被禁用，返回一个默认的管理员用户
-    if not settings.ENABLE_AUTH:
-        # 尝试从数据库获取admin用户，如果不存在则创建虚拟用户
-        try:
-            from ..service.user import get_user_by_username
-            admin_user = await get_user_by_username(db, "admin")
-            if admin_user:
-                return admin_user
-        except Exception:
-            pass
-        
-        # 如果数据库中没有admin用户，创建一个虚拟的管理员用户对象
-        from uuid import UUID
-        from datetime import datetime
-        
-        class MockUser:
-            def __init__(self):
-                # 使用固定的UUID，避免每次调用都生成新的
-                self.id = UUID("00000000-0000-0000-0000-000000000001")
-                self.username = "admin"
-                self.email = "admin@example.com"
-                self.full_name = "Administrator"
-                self.is_active = True
-                self.is_admin = True
-                self.is_verified = True
-                self.create_time = datetime.now()
-                self.update_time = datetime.now()
-        
-        return MockUser()
-    
-    # 正常认证流程
     user = await get_current_user(db, token)
     if not user.is_active:
         raise HTTPException(

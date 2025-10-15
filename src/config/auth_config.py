@@ -23,9 +23,6 @@ class AuthSettings(BaseSettings):
     SECRET_KEY: str = os.getenv('SECRET_KEY', 'data-platform-secret-key')
     ALGORITHM: str = os.getenv('ALGORITHM', 'HS256')
 
-    # 认证开关 - 设置为 False 可以一键关闭所有认证
-    ENABLE_AUTH: bool = os.getenv('ENABLE_AUTH', 'True').lower() == 'true'
-
     # 应用配置
     APP_CORS: str = os.getenv("APP_CORS", "")
     APP_SECRET_KEY: str = os.getenv("APP_SECRET_KEY", "data-platform-app-secret")
