@@ -18,7 +18,7 @@ pdm install
 pdm run db:reset
 
 # 4. 初始化权限数据
-pdm run python -m src.db_util.init_data
+pdm run db:init_perm
 
 # 5. 启动服务
 pdm run start          # API服务（包含权限系统）
@@ -73,20 +73,20 @@ pdm run celery:all     # Celery服务
 pdm install
 
 # 运行脚本
-pdm run dev:start    # 启动开发服务器
+pdm run start        # 启动API服务器
 pdm run worker       # 启动Worker
 pdm run beat         # 启动调度器
-pdm run db:init      # 初始化数据库
 ```
 
 ### 数据库管理
 ```bash
-# 数据库操作
-pdm run db:init      # 初始化数据库
-pdm run db:upgrade   # 升级数据库
-pdm run db:status    # 查看状态
-pdm run db:reset     # 重置数据库
+# 快速命令（详见：数据库管理.md）
+pdm run db:reset      # 重置数据库
+pdm run db:init_perm  # 初始化权限数据
+pdm run db:status     # 查看状态
 ```
+
+> 💡 **详细说明**: 查看 [数据库管理.md](./数据库管理.md) 了解完整的数据库管理功能
 
 ## 📊 任务类型
 
@@ -107,53 +107,14 @@ pdm run db:reset     # 重置数据库
 
 ## 🔧 配置说明
 
-### 环境变量
-```bash
-# 数据库配置
-MYSQL_HOST=localhost
-MYSQL_USER=root
-MYSQL_PASSWORD=123456
-MYSQL_DATABASE=data_platform
-
-# Redis配置
-REDIS_HOST=localhost
-REDIS_PORT=6379
-
-# API配置
-SECRET_KEY=your-secret-key
-ADMIN_PASSWORD=admin123
-```
-
-### Docker配置
-```bash
-# Docker主机配置
-DOCKER_HOST_IP=127.0.0.1
-DOCKER_HOST=tcp://remote-docker:2375
-API_BASE_URL=http://localhost:8000
-```
+详细配置请参考：
+- **[安装配置.md](./安装配置.md)** - 完整的环境变量和配置说明
+- **[Celery配置说明.md](./Celery配置说明.md)** - Celery 和 Beat 配置
 
 ## 📈 监控和维护
 
-### 健康检查
-```bash
-# API健康检查
-curl http://localhost:8000/health
-
-# 数据库状态
-pdm run db:status
-
-# Redis连接
-redis-cli ping
-```
-
-### 日志查看
-```bash
-# 查看应用日志
-tail -f logs/app.log
-
-# 查看Celery日志
-tail -f logs/celery.log
-```
+详细监控配置请参考：
+- **[心跳监控配置.md](./心跳监控配置.md)** - 任务监控和心跳机制
 
 ## 🚀 部署指南
 
@@ -166,7 +127,7 @@ pdm install
 pdm run db:reset
 
 # 3. 初始化权限数据
-pdm run python -m src.db_util.init_data
+pdm run db:init_perm
 
 # 4. 启动服务
 pdm run start
@@ -174,16 +135,10 @@ pdm run celery:all
 ```
 
 ### 生产环境
-```bash
-# 1. 备份数据库
-mysqldump -u root -p data_platform > backup.sql
 
-# 2. 升级数据库
-pdm run db:upgrade
-
-# 3. 启动服务
-# 使用 systemd 或 Docker Compose 管理服务
-```
+生产环境部署请参考：
+- **[安装配置.md](./安装配置.md)** - 完整的部署配置
+- **[数据库管理.md](./数据库管理.md)** - 数据库管理最佳实践
 
 ## 🆘 故障排除
 

@@ -107,71 +107,13 @@ class DatabaseManager:
             BaseModel.metadata.create_all(db_engine)
             print("✅ 表创建完成")
             
-            # 插入默认数据
-            self._insert_default_data()
+            print("\n💡 提示: 使用以下命令初始化权限数据:")
+            print("   pdm run db:init_perm")
             
             return True
                     
         except Exception as e:
             print(f"❌ 数据库初始化失败: {e}")
-            return False
-
-    def _insert_default_data(self):
-        """插入默认数据"""
-        import bcrypt
-        from uuid import uuid4
-        
-        print("📝 插入默认数据...")
-        
-        try:
-            db_engine = self._get_db_engine()
-            SessionLocal = sessionmaker(bind=db_engine)
-            with SessionLocal() as session:
-                # 检查是否已有管理员用户
-                existing_admin = session.query(User).filter(User.username == "admin").first()
-                if existing_admin:
-                    print("ℹ️  管理员用户已存在，跳过创建")
-                else:
-                    # 创建默认管理员用户
-                    admin_user = User(
-                        id=str(uuid4()),
-                        username="admin",
-                        email="admin@example.com",
-                        hashed_password=bcrypt.hashpw("admin123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8'),
-                        full_name="系统管理员",
-                        is_active=True,
-                        is_admin=True,
-                        is_verified=True,
-                        description="系统默认管理员账户"
-                    )
-                    session.add(admin_user)
-                    session.commit()
-                    print("✅ 默认管理员用户创建成功: admin / admin123")
-            
-            print("🎉 默认数据插入完成！")
-            
-        except Exception as e:
-            print(f"❌ 插入默认数据失败: {e}")
-            raise
-
-    def upgrade_database(self) -> bool:
-        """升级数据库（检查并添加缺失字段）"""
-        print("⬆️  升级数据库...")
-        
-        try:
-            if not self._check_connection():
-                return False
-            
-            # 使用SQLAlchemy重新创建表结构（会自动添加缺失的字段）
-            print("📝 更新表结构...")
-            db_engine = self._get_db_engine()
-            BaseModel.metadata.create_all(db_engine)
-            print("✅ 表结构更新完成")
-            
-            return True
-            
-        except Exception as e:
-            print(f"❌ 数据库升级失败: {e}")
             return False
 
     def reset_database(self) -> bool:
@@ -244,7 +186,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='统一数据库管理工具 (SQLAlchemy ORM)')
-    parser.add_argument('action', nargs='?', choices=['init', 'upgrade', 'reset', 'status'], 
+    parser.add_argument('action', nargs='?', choices=['init', 'reset', 'status'], 
                        help='操作类型')
     
     args = parser.parse_args()
@@ -254,9 +196,11 @@ def main():
         parser.print_help()
         print("\n📋 使用示例:")
         print("  python scripts/db_manager.py init     # 初始化数据库")
-        print("  python scripts/db_manager.py upgrade  # 升级数据库")
         print("  python scripts/db_manager.py reset    # 重置数据库")
         print("  python scripts/db_manager.py status   # 查看状态")
+        print("\n💡 提示:")
+        print("  - 数据库结构变更请使用: pdm run db:reset")
+        print("  - 权限数据初始化请使用: pdm run db:init_perm")
         return 1
     
     db_manager = DatabaseManager()
@@ -266,13 +210,6 @@ def main():
             print("\n🎉 初始化完成！")
         else:
             print("\n❌ 初始化失败！")
-            return 1
-    
-    elif args.action == 'upgrade':
-        if db_manager.upgrade_database():
-            print("\n✅ 升级完成！")
-        else:
-            print("\n❌ 升级失败！")
             return 1
     
     elif args.action == 'reset':

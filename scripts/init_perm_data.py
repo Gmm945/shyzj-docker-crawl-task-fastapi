@@ -8,25 +8,26 @@ import contextlib
 import asyncio
 import os
 import sys
+from pathlib import Path
 
 # 添加项目根路径
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
-sys.path.append(project_root)
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from sqlalchemy import select
-from .db import get_async_session
-from ..user_manage.models.user import User
-from ..user_manage.models.role import Role
-from ..user_manage.models.casbin import CasbinAction, CasbinObject, CasbinRule, CasbinPermission
-from ..user_manage.utils.password import get_password_hash
-from ..user_manage.service.role_service import (
+from src.db_util.db import get_async_session
+from src.user_manage.models.user import User
+from src.user_manage.models.role import Role
+from src.user_manage.models.casbin import CasbinAction, CasbinObject, CasbinRule, CasbinPermission
+from src.user_manage.utils.password import get_password_hash
+from src.user_manage.service.role_service import (
     get_role_count,
     create_role,
     get_roles_by_uid,
     get_role_by_role_key,
     bind_user_role,
 )
-from ..user_manage.service.casbin_permission import (
+from src.user_manage.service.casbin_permission import (
     delete_casbin_rules_by_role_key,
     create_casbin_rules,
 )
@@ -324,5 +325,6 @@ async def create_data():
 
 
 if __name__ == "__main__":
-    # 运行方式: python -m src.db_util.init_data
+    # 运行方式: python scripts/init_perm_data.py 或 pdm run db:init_perm
     asyncio.run(create_data())
+
