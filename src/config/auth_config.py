@@ -41,14 +41,12 @@ class AuthSettings(BaseSettings):
     DATABASE_MAX_OVERFLOW: int = int(os.getenv("DATABASE_MAX_OVERFLOW", "30"))
     DATABASE_POOL_TIMEOUT: int = int(os.getenv("DATABASE_POOL_TIMEOUT", "60"))
     DATABASE_POOL_RECYCLE: int = int(os.getenv("DATABASE_POOL_RECYCLE", "1800"))
-    DATABASE_POOL_PRE_PING: bool = os.getenv("DATABASE_POOL_PRE_PING", "True").lower() == "true"
     DATABASE_ECHO: bool = os.getenv("DATABASE_ECHO", "False").lower() == "true"
     # Worker数据库连接池配置（同步）
     WORKER_DATABASE_POOL_SIZE: int = int(os.getenv("WORKER_DATABASE_POOL_SIZE", "10"))
     WORKER_DATABASE_MAX_OVERFLOW: int = int(os.getenv("WORKER_DATABASE_MAX_OVERFLOW", "20"))
     WORKER_DATABASE_POOL_TIMEOUT: int = int(os.getenv("WORKER_DATABASE_POOL_TIMEOUT", "30"))
     WORKER_DATABASE_POOL_RECYCLE: int = int(os.getenv("WORKER_DATABASE_POOL_RECYCLE", "1800"))
-    WORKER_DATABASE_POOL_PRE_PING: bool = os.getenv("WORKER_DATABASE_POOL_PRE_PING", "True").lower() == "true"
     WORKER_DATABASE_ECHO: bool = os.getenv("WORKER_DATABASE_ECHO", "False").lower() == "true"
 
     # Redis配置
@@ -135,7 +133,7 @@ class AuthSettings(BaseSettings):
     @property
     def async_database_url(self) -> str:
         """获取异步数据库连接URL"""
-        return f"mysql+aiomysql://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_DB_NAME}?charset={self.DATABASE_CHARSET}"
+        return f"mysql+asyncmy://{self.DATABASE_USER}:{self.DATABASE_PASSWORD}@{self.DATABASE_HOST}:{self.DATABASE_PORT}/{self.DATABASE_DB_NAME}?charset={self.DATABASE_CHARSET}"
     
     @property
     def sync_database_url(self) -> str:
@@ -150,7 +148,6 @@ class AuthSettings(BaseSettings):
             "max_overflow": self.DATABASE_MAX_OVERFLOW,
             "pool_timeout": self.DATABASE_POOL_TIMEOUT,
             "pool_recycle": self.DATABASE_POOL_RECYCLE,
-            "pool_pre_ping": self.DATABASE_POOL_PRE_PING,
             "echo": self.DATABASE_ECHO
         }
     
@@ -162,7 +159,6 @@ class AuthSettings(BaseSettings):
             "max_overflow": self.WORKER_DATABASE_MAX_OVERFLOW,
             "pool_timeout": self.WORKER_DATABASE_POOL_TIMEOUT,
             "pool_recycle": self.WORKER_DATABASE_POOL_RECYCLE,
-            "pool_pre_ping": self.WORKER_DATABASE_POOL_PRE_PING,
             "echo": self.WORKER_DATABASE_ECHO
         }
     

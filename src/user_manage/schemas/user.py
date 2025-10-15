@@ -84,6 +84,5 @@ class Token(BaseModel):
 
 
 class ResetPasswordRequest(BaseModel):
-    """重置密码请求"""
-    user_id: UUID
-    new_password: str
+    """管理员重置用户密码请求"""
+    new_password: str = Field(..., min_length=6, description="新密码")

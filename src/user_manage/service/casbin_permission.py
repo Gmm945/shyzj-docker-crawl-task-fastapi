@@ -1,15 +1,15 @@
 """Casbin 权限管理服务 - 参照 aks-management 实现"""
 from typing import List
 from sqlalchemy import delete, select, and_, tuple_
+from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
-from ...db_util.core import DBSessionDep
 from ...db_util.db import get_casbin_e
 from ..models.casbin import CasbinRule, CasbinPermission
 
 
 # ==================== CasbinRule 核心服务 ====================
-async def get_casbin_rules_by_ptype_p_v0(db: DBSessionDep, role_key: str):
+async def get_casbin_rules_by_ptype_p_v0(db: AsyncSession, role_key: str):
     """
     根据角色 key 获取所有策略规则 (ptype='p')
     返回该角色拥有的所有资源-动作权限
@@ -21,7 +21,7 @@ async def get_casbin_rules_by_ptype_p_v0(db: DBSessionDep, role_key: str):
     return result.scalars().all()
 
 
-async def get_casbin_rules_by_ptype_g_v1(db: DBSessionDep, role_key: str):
+async def get_casbin_rules_by_ptype_g_v1(db: AsyncSession, role_key: str):
     """
     根据角色 key 获取所有组规则 (ptype='g')
     返回所有被分配到该角色的用户
@@ -33,7 +33,7 @@ async def get_casbin_rules_by_ptype_g_v1(db: DBSessionDep, role_key: str):
     return result.scalars().all()
 
 
-async def delete_casbin_rules_by_role_key(db: DBSessionDep, role_key: str):
+async def delete_casbin_rules_by_role_key(db: AsyncSession, role_key: str):
     """
     删除指定角色的所有规则
     包括策略规则(p)和组规则(g)
@@ -56,7 +56,7 @@ async def delete_casbin_rules_by_role_key(db: DBSessionDep, role_key: str):
         return 0
 
 
-async def create_casbin_rules(db: DBSessionDep, rules: List[CasbinRule]):
+async def create_casbin_rules(db: AsyncSession, rules: List[CasbinRule]):
     """
     批量创建 Casbin 规则
     不检查重复，直接添加
@@ -71,7 +71,7 @@ async def create_casbin_rules(db: DBSessionDep, rules: List[CasbinRule]):
         return False
 
 
-async def create_casbin_rule(db: DBSessionDep, cr: CasbinRule):
+async def create_casbin_rule(db: AsyncSession, cr: CasbinRule):
     """
     创建单个 Casbin 规则
     如果相同规则已存在，则不添加
@@ -94,7 +94,7 @@ async def create_casbin_rule(db: DBSessionDep, cr: CasbinRule):
     return False
 
 
-async def delete_casbin_rules_by_ids(db: DBSessionDep, rule_ids: List[int]):
+async def delete_casbin_rules_by_ids(db: AsyncSession, rule_ids: List[int]):
     """根据ID批量删除规则"""
     if not rule_ids or len(rule_ids) == 0:
         return 0
@@ -112,21 +112,21 @@ async def delete_casbin_rules_by_ids(db: DBSessionDep, rule_ids: List[int]):
         return 0
 
 
-async def get_casbin_rules_by_obj_key(db: DBSessionDep, obj_key: str):
+async def get_casbin_rules_by_obj_key(db: AsyncSession, obj_key: str):
     """根据对象 key 获取所有规则"""
     statement = select(CasbinRule).where(CasbinRule.v1 == obj_key)
     result = await db.execute(statement)
     return result.scalars().all()
 
 
-async def get_casbin_rules_by_act_key(db: DBSessionDep, act_key: str):
+async def get_casbin_rules_by_act_key(db: AsyncSession, act_key: str):
     """根据动作 key 获取所有规则"""
     statement = select(CasbinRule).where(CasbinRule.v2 == act_key)
     result = await db.execute(statement)
     return result.scalars().all()
 
 
-async def get_permission_details_from_rules(db: DBSessionDep, rules: List[dict]):
+async def get_permission_details_from_rules(db: AsyncSession, rules: List[dict]):
     """
     从规则中获取权限详情
     根据 object_key 和 action_key 查询完整的权限信息
@@ -145,7 +145,7 @@ async def get_permission_details_from_rules(db: DBSessionDep, rules: List[dict])
     return result.scalars().all()
 
 
-async def change_role_casbinrules(db: DBSessionDep, role_key: str, crs: List[CasbinRule]):
+async def change_role_casbinrules(db: AsyncSession, role_key: str, crs: List[CasbinRule]):
     """
     修改角色的权限规则
     删除该角色的所有原有权限，然后添加新权限

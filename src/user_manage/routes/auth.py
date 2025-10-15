@@ -1,60 +1,28 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import Response
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from typing import Optional
+from fastapi.security import OAuth2PasswordRequestForm
 
 from ...db_util.core import DBSessionDep
 from ...common.schemas.base import ResponseModel
-from ..schemas.user import UserLogin, TokenResponse, PasswordChange
-from ..service.auth import login_user, get_current_user, change_password
-from ..service.user import get_user_by_id
+from ..schemas.user import UserLogin, PasswordChange
+from ..service.auth import login_user, change_password
+from ..service.security import get_current_user
 from ..models.user import User
-from ...config.auth_config import settings
 
 router = APIRouter()
 _obj = 'Auth'
 
-# OAuth2 认证方案
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
-
 
 async def get_current_active_user(
-    db: DBSessionDep,
-    token: str = Depends(oauth2_scheme)
+    current_user: User = Depends(get_current_user)
 ) -> User:
     """获取当前活跃用户"""
-    user = await get_current_user(db, token)
-    if not user.is_active:
+    if not current_user.is_active:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="用户账户已被禁用"
         )
-    return user
-
-
-@router.post("/login")
-async def login(
-    login_data: UserLogin,
-    db: DBSessionDep
-):
-    """
-    用户登录
-
-    **参数:**
-    - `login_data`: 包含用户名和密码的登录信息
-
-    **返回:**
-    - 包含访问令牌的JSON响应
-    """
-    try:
-        token_response = await login_user(db, login_data)
-        res = ResponseModel(message="登录成功", data=token_response)
-        return Response(content=res.model_dump_json())
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=str(e)
-        )
+    return current_user
 
 
 @router.post("/token")
@@ -130,7 +98,7 @@ async def change_user_password(
 @router.post("/logout")
 async def logout():
     """
-    用户登出
+    用户登出,前端删除token即可,后端无需处理,此接口无实际逻辑
 
     **返回:**
     - 登出成功的响应

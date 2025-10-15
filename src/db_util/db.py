@@ -67,12 +67,13 @@ class DatabaseSessionManager:
         session = self._sessionmaker()
         try:
             yield session
+            # 在会话结束时，提交事务
             await session.commit()
         except Exception:
-            await session.rollback()
+            await session.rollback()  # 回滚未提交的事务
             raise
         finally:
-            await session.close()
+            await session.close()  # 确保关闭会话，释放资源
 
 # 创建数据库会话管理器
 sessionmanager = DatabaseSessionManager(DATABASE_URL, settings.database_engine_kwargs)

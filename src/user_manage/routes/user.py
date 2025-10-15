@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from ...db_util.core import DBSessionDep
 from ...common.schemas.base import ResponseModel
-from ..schemas.user import UserCreate, UserUpdate, UserResponse, UserPagination
+from ..schemas.user import UserCreate, UserUpdate, UserResponse, UserPagination, ResetPasswordRequest
 from ..service.user import (
     create_user,
     get_user_by_id,
@@ -282,29 +282,52 @@ async def get_active_users_count_endpoint(
     return Response(content=res.model_dump_json())
 
 
-@router.post("/init-admin", response_model=ResponseModel)
-async def init_admin(db: DBSessionDep):
-    """初始化管理员账户（仅在没有管理员时可用）"""
-    # 检查是否已有管理员
-    result = await db.execute(select(User).where(User.is_admin == True))
-    existing_admin = result.scalar_one_or_none()
+@router.put("/{user_id}/reset-password")
+async def admin_reset_user_password(
+    user_id: UUID,
+    req_body: ResetPasswordRequest,
+    db: DBSessionDep,
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    管理员重置用户密码
     
-    if existing_admin:
+    **参数:**
+    - `user_id`: 要重置密码的用户ID
+    - `req_body`: 包含新密码的请求体
+    
+    **返回:**
+    - 重置成功的响应
+    
+    **权限:**
+    - 只有管理员可以重置其他用户的密码
+    """
+    # 检查权限：只有管理员可以重置密码
+    if not current_user.is_admin:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="管理员账户已存在"
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="只有管理员可以重置用户密码"
         )
     
-    # 创建管理员账户
-    admin_user = User(
-        username="admin",
-        email="admin@example.com",
-        hashed_password=get_password_hash(settings.ADMIN_PASSWORD),
-        is_active=True,
-        is_admin=True
-    )
-    db.add(admin_user)
-    await db.commit()
+    # 检查用户是否存在
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="用户不存在"
+        )
     
-    res = ResponseModel(message="管理员账户创建成功", data={"username": "admin"})
+    # 重置密码
+    new_hashed_password = get_password_hash(req_body.new_password)
+    
+    # 直接更新用户对象（使用 ORM 方式）
+    user.hashed_password = new_hashed_password
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    
+    res = ResponseModel(
+        message="密码重置成功", 
+        data={"user_id": str(user_id), "username": user.username}
+    )
     return Response(content=res.model_dump_json())

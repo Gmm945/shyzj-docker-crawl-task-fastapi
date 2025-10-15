@@ -1,23 +1,21 @@
-"""安全相关服务"""
+"""安全相关服务 - OAuth2、权限控制、Casbin"""
 from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from loguru import logger
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...db_util.core import DBSessionDep
 from ...db_util.db import get_casbin_e, sessionmanager
-from ...config.auth_config import settings
+from ...db_util.core import DBSessionDep
 from ..models.user import User
 from .role_service import get_roles_by_uid
 from .user import get_user_by_username
 
-# OAuth2 配置
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login")
+# 从 auth 模块导入 JWT 配置（避免重复定义）
+from .auth import SECRET_KEY, ALGORITHM
 
-
-# JWT 配置
-SECRET_KEY = settings.SECRET_KEY
-ALGORITHM = "HS256"
+# OAuth2 配置（唯一定义处）
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token")
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -76,7 +74,7 @@ def check_permissions(obj: str = None, ex_rule: str = None):
     """
     async def check(
         request: Request,
-        db: DBSessionDep,
+        db: DBSessionDep,  # 这里使用 DBSessionDep 是正确的，因为是依赖注入
         user: User = Depends(get_current_user)
     ):
         # 提取URL后缀（去除基础URL）
@@ -133,7 +131,7 @@ def check_permissions(obj: str = None, ex_rule: str = None):
     return check
 
 
-async def check_user_permission(user: User, db: DBSessionDep, obj: str, action: str) -> bool:
+async def check_user_permission(user: User, db: AsyncSession, obj: str, action: str) -> bool:
     """
     检查用户是否有指定权限（不抛出异常）
     

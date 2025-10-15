@@ -5,21 +5,19 @@ from loguru import logger
 from sqlalchemy import delete, func, insert, select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.functions import count
-
-from ...db_util.core import DBSessionDep
 from ..schemas.role import RolePagination, RoleCreate
 from ..models.user import User
 from ..models.role import Role, MidUserRole
 
 
-async def get_role_count(db: DBSessionDep):
+async def get_role_count(db: AsyncSession):
     """获取角色总数"""
     statement = select(func.count()).select_from(Role)
     result = await db.execute(statement)
     return result.scalars().first()
 
 
-async def create_role(db: DBSessionDep, role: Role):
+async def create_role(db: AsyncSession, role: Role):
     """创建角色"""
     try:
         db.add(role)
@@ -31,14 +29,14 @@ async def create_role(db: DBSessionDep, role: Role):
         return False
 
 
-async def get_role_by_role_key(db: DBSessionDep, role_key: str):
+async def get_role_by_role_key(db: AsyncSession, role_key: str):
     """根据 role_key 获取角色"""
     stmt = select(Role).where(Role.role_key == role_key)
     result = await db.execute(stmt)
     return result.scalars().first()
 
 
-async def get_roles(db: DBSessionDep, sort_bys: List[str], sort_orders: List[str], role_pn: RolePagination):
+async def get_roles(db: AsyncSession, sort_bys: List[str], sort_orders: List[str], role_pn: RolePagination):
     """获取角色列表（包含用户数量统计）"""
     user_count_subq = (
         select(MidUserRole.rid, func.count(MidUserRole.uid).label("raw_user_count"))
@@ -76,7 +74,7 @@ async def get_roles(db: DBSessionDep, sort_bys: List[str], sort_orders: List[str
     return items.fetchall()
 
 
-async def get_page_total(db: DBSessionDep, role_pn: RolePagination):
+async def get_page_total(db: AsyncSession, role_pn: RolePagination):
     """获取角色总数"""
     total_stmt = select(count(Role.id))
     if role_pn.key_word:
@@ -85,21 +83,21 @@ async def get_page_total(db: DBSessionDep, role_pn: RolePagination):
     return total.scalars().first()
 
 
-async def get_roles_by_uid(db: DBSessionDep, user_id: UUID):
+async def get_roles_by_uid(db: AsyncSession, user_id: UUID):
     """根据用户ID获取用户的所有角色"""
     stmt = select(Role).join(MidUserRole, Role.id == MidUserRole.rid).where(MidUserRole.uid == user_id)
     result = await db.execute(stmt)
     return result.scalars().all()
 
 
-async def get_bind_uids_by_role_id(db: DBSessionDep, role_id: UUID):
+async def get_bind_uids_by_role_id(db: AsyncSession, role_id: UUID):
     """获取绑定到该角色的所有用户ID"""
     statement = select(MidUserRole).where(MidUserRole.rid == role_id)
     result = await db.execute(statement)
     return result.scalars().all()
 
 
-async def bind_user_role(db: DBSessionDep, user_id: UUID, role_id: UUID):
+async def bind_user_role(db: AsyncSession, user_id: UUID, role_id: UUID):
     """绑定用户和角色"""
     stmt_check = select(MidUserRole).where(
         and_(MidUserRole.uid == user_id, MidUserRole.rid == role_id)
@@ -121,7 +119,7 @@ async def bind_user_role(db: DBSessionDep, user_id: UUID, role_id: UUID):
         return False
 
 
-async def unbind_user_roles_by_uid(db: DBSessionDep, user_id: UUID):
+async def unbind_user_roles_by_uid(db: AsyncSession, user_id: UUID):
     """解绑用户的所有角色"""
     stmt_check = select(MidUserRole).where(MidUserRole.uid == user_id)
     res_check = await db.execute(stmt_check)
@@ -138,7 +136,7 @@ async def unbind_user_roles_by_uid(db: DBSessionDep, user_id: UUID):
     return True
 
 
-async def change_user_roles(db: DBSessionDep, user_id: UUID, role_ids: List[UUID]):
+async def change_user_roles(db: AsyncSession, user_id: UUID, role_ids: List[UUID]):
     """修改用户的角色"""
     try:
         statement = select(User).where(User.id == user_id)

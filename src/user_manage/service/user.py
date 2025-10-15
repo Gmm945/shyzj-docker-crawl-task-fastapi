@@ -4,13 +4,12 @@ from sqlalchemy import select, and_, update, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.functions import count
 
-from ...db_util.core import DBSessionDep
 from ..models.user import User
 from ..schemas.user import UserPagination, UserCreate, UserUpdate
 from ..utils.password import get_password_hash
 
 
-async def create_user(db: DBSessionDep, user_data: UserCreate) -> User:
+async def create_user(db: AsyncSession, user_data: UserCreate) -> User:
     """创建用户"""
     # 检查用户名是否已存在
     existing_user = await get_user_by_username(db, user_data.username)
@@ -40,35 +39,35 @@ async def create_user(db: DBSessionDep, user_data: UserCreate) -> User:
     return db_user
 
 
-async def get_user_by_id(db: DBSessionDep, user_id: UUID) -> Optional[User]:
+async def get_user_by_id(db: AsyncSession, user_id: UUID) -> Optional[User]:
     """根据ID获取用户"""
     statement = select(User).where(and_(User.id == str(user_id), User.is_delete == False))
     result = await db.execute(statement)
     return result.scalars().first()
 
 
-async def get_user_by_username(db: DBSessionDep, username: str) -> Optional[User]:
+async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User]:
     """根据用户名获取用户"""
     statement = select(User).where(and_(User.username == username, User.is_delete == False))
     result = await db.execute(statement)
     return result.scalars().first()
 
 
-async def get_user_by_email(db: DBSessionDep, email: str) -> Optional[User]:
+async def get_user_by_email(db: AsyncSession, email: str) -> Optional[User]:
     """根据邮箱获取用户"""
     statement = select(User).where(and_(User.email == email, User.is_delete == False))
     result = await db.execute(statement)
     return result.scalars().first()
 
 
-async def get_all_users(db: DBSessionDep) -> List[User]:
+async def get_all_users(db: AsyncSession) -> List[User]:
     """获取所有用户"""
     statement = select(User).where(User.is_delete == False)
     result = await db.execute(statement)
     return result.scalars().all()
 
 
-async def get_page_users(db: DBSessionDep, sort_bys: List[str], sort_orders: List[str], pagination: UserPagination) -> List[User]:
+async def get_page_users(db: AsyncSession, sort_bys: List[str], sort_orders: List[str], pagination: UserPagination) -> List[User]:
     """分页获取用户列表"""
     stmt = select(User).where(User.is_delete == False)
     
@@ -91,7 +90,7 @@ async def get_page_users(db: DBSessionDep, sort_bys: List[str], sort_orders: Lis
     return items.scalars().all()
 
 
-async def get_page_total(db: DBSessionDep, pagination: UserPagination) -> int:
+async def get_page_total(db: AsyncSession, pagination: UserPagination) -> int:
     """获取分页总数"""
     total_stmt = select(count(User.id)).where(User.is_delete == False)
     if pagination.key_word:
@@ -102,35 +101,35 @@ async def get_page_total(db: DBSessionDep, pagination: UserPagination) -> int:
     return total.scalars().first() or 0
 
 
-async def update_user_by_id(db: DBSessionDep, user_id: UUID, update_data: dict) -> bool:
+async def update_user_by_id(db: AsyncSession, user_id: UUID, update_data: dict) -> bool:
     """更新用户"""
     stmt = update(User).where(and_(User.id == user_id, User.is_delete == False)).values(**update_data)
-    await db.execute(stmt)
-    await db.commit()
-    return True
+    result = await db.execute(stmt)
+    await db.commit()  # 保留 commit（确保功能可用）
+    return result.rowcount > 0
 
 
-async def delete_user_by_id(db: DBSessionDep, user_id: UUID) -> bool:
+async def delete_user_by_id(db: AsyncSession, user_id: UUID) -> bool:
     """软删除用户"""
     stmt = update(User).where(User.id == user_id).values({User.is_delete: True})
     await db.execute(stmt)
-    await db.commit()
+    await db.commit()  # 保留 commit（确保功能可用）
     return True
 
 
-async def toggle_user_active(db: DBSessionDep, user_id: UUID) -> Optional[bool]:
+async def toggle_user_active(db: AsyncSession, user_id: UUID) -> Optional[bool]:
     """切换用户激活状态"""
     user = await get_user_by_id(db, user_id)
     if user:
         new_status = not user.is_active
         stmt = update(User).where(User.id == user_id).values({User.is_active: new_status})
         await db.execute(stmt)
-        await db.commit()
+        await db.commit()  # 保留 commit（确保功能可用）
         return new_status
     return None
 
 
-async def get_active_users_count(db: DBSessionDep) -> int:
+async def get_active_users_count(db: AsyncSession) -> int:
     """获取活跃用户数量"""
     statement = select(count(User.id)).where(and_(User.is_active == True, User.is_delete == False))
     result = await db.execute(statement)

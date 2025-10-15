@@ -6,7 +6,6 @@ from sqlalchemy import select, delete, and_, func
 from sqlalchemy.sql.functions import count
 from loguru import logger
 
-from ...db_util.core import DBSessionDep
 from ...db_util.db import get_casbin_e
 from ..models.casbin import CasbinRule, CasbinObject, CasbinAction, CasbinPermission
 from ..models.role import Role, MidUserRole
@@ -18,7 +17,7 @@ from ..schemas.role import RoleCreate, RoleUpdate
 
 
 # ==================== CasbinObject 服务 ====================
-async def create_casbin_object(db: DBSessionDep, obj_data: CreateCasbinObject) -> CasbinObject:
+async def create_casbin_object(db: AsyncSession, obj_data: CreateCasbinObject) -> CasbinObject:
     """创建 Casbin 对象"""
     db_obj = CasbinObject(
         name=obj_data.name,
@@ -31,14 +30,14 @@ async def create_casbin_object(db: DBSessionDep, obj_data: CreateCasbinObject) -
     return db_obj
 
 
-async def get_casbin_objects(db: DBSessionDep) -> List[CasbinObject]:
+async def get_casbin_objects(db: AsyncSession) -> List[CasbinObject]:
     """获取所有 Casbin 对象"""
     statement = select(CasbinObject)
     result = await db.execute(statement)
     return result.scalars().all()
 
 
-async def update_casbin_object(db: DBSessionDep, obj_id: str, obj_data: EditCasbinObject) -> bool:
+async def update_casbin_object(db: AsyncSession, obj_id: str, obj_data: EditCasbinObject) -> bool:
     """更新 Casbin 对象"""
     statement = select(CasbinObject).where(CasbinObject.id == obj_id)
     result = await db.execute(statement)
@@ -53,7 +52,7 @@ async def update_casbin_object(db: DBSessionDep, obj_id: str, obj_data: EditCasb
     return False
 
 
-async def delete_casbin_object(db: DBSessionDep, obj_id: str) -> bool:
+async def delete_casbin_object(db: AsyncSession, obj_id: str) -> bool:
     """删除 Casbin 对象"""
     statement = select(CasbinObject).where(CasbinObject.id == obj_id)
     result = await db.execute(statement)
@@ -67,7 +66,7 @@ async def delete_casbin_object(db: DBSessionDep, obj_id: str) -> bool:
 
 
 # ==================== CasbinAction 服务 ====================
-async def create_casbin_action(db: DBSessionDep, action_data: CreateCasbinAction) -> CasbinAction:
+async def create_casbin_action(db: AsyncSession, action_data: CreateCasbinAction) -> CasbinAction:
     """创建 Casbin 动作"""
     db_action = CasbinAction(
         name=action_data.name,
@@ -80,14 +79,14 @@ async def create_casbin_action(db: DBSessionDep, action_data: CreateCasbinAction
     return db_action
 
 
-async def get_casbin_actions(db: DBSessionDep) -> List[CasbinAction]:
+async def get_casbin_actions(db: AsyncSession) -> List[CasbinAction]:
     """获取所有 Casbin 动作"""
     statement = select(CasbinAction)
     result = await db.execute(statement)
     return result.scalars().all()
 
 
-async def update_casbin_action(db: DBSessionDep, action_id: str, action_data: EditCasbinAction) -> bool:
+async def update_casbin_action(db: AsyncSession, action_id: str, action_data: EditCasbinAction) -> bool:
     """更新 Casbin 动作"""
     statement = select(CasbinAction).where(CasbinAction.id == action_id)
     result = await db.execute(statement)
@@ -102,7 +101,7 @@ async def update_casbin_action(db: DBSessionDep, action_id: str, action_data: Ed
     return False
 
 
-async def delete_casbin_action(db: DBSessionDep, action_id: str) -> bool:
+async def delete_casbin_action(db: AsyncSession, action_id: str) -> bool:
     """删除 Casbin 动作"""
     statement = select(CasbinAction).where(CasbinAction.id == action_id)
     result = await db.execute(statement)
@@ -116,7 +115,7 @@ async def delete_casbin_action(db: DBSessionDep, action_id: str) -> bool:
 
 
 # ==================== CasbinPermission 服务 ====================
-async def create_casbin_permission(db: DBSessionDep, perm_data: AddCasbinPermRequest) -> CasbinPermission:
+async def create_casbin_permission(db: AsyncSession, perm_data: AddCasbinPermRequest) -> CasbinPermission:
     """创建 Casbin 权限"""
     db_perm = CasbinPermission(
         name=perm_data.name,
@@ -132,7 +131,7 @@ async def create_casbin_permission(db: DBSessionDep, perm_data: AddCasbinPermReq
     return db_perm
 
 
-async def batch_create_casbin_permissions(db: DBSessionDep, perm_list: BatchAddPermRequest) -> bool:
+async def batch_create_casbin_permissions(db: AsyncSession, perm_list: BatchAddPermRequest) -> bool:
     """批量创建 Casbin 权限"""
     try:
         db_perms = []
@@ -155,7 +154,7 @@ async def batch_create_casbin_permissions(db: DBSessionDep, perm_list: BatchAddP
         return False
 
 
-async def get_casbin_permissions(db: DBSessionDep, pagination: PermPagination) -> List[CasbinPermission]:
+async def get_casbin_permissions(db: AsyncSession, pagination: PermPagination) -> List[CasbinPermission]:
     """分页获取 Casbin 权限"""
     stmt = select(CasbinPermission)
     
@@ -175,7 +174,7 @@ async def get_casbin_permissions(db: DBSessionDep, pagination: PermPagination) -
     return result.scalars().all()
 
 
-async def count_casbin_permissions(db: DBSessionDep, pagination: PermPagination) -> int:
+async def count_casbin_permissions(db: AsyncSession, pagination: PermPagination) -> int:
     """获取权限总数"""
     stmt = select(count(CasbinPermission.id))
     
@@ -192,7 +191,7 @@ async def count_casbin_permissions(db: DBSessionDep, pagination: PermPagination)
 
 
 # ==================== Role 服务 ====================
-async def create_role(db: DBSessionDep, role_data: RoleCreate) -> Role:
+async def create_role(db: AsyncSession, role_data: RoleCreate) -> Role:
     """创建角色"""
     db_role = Role(
         name=role_data.name,
@@ -205,28 +204,28 @@ async def create_role(db: DBSessionDep, role_data: RoleCreate) -> Role:
     return db_role
 
 
-async def get_roles(db: DBSessionDep) -> List[Role]:
+async def get_roles(db: AsyncSession) -> List[Role]:
     """获取所有角色"""
     statement = select(Role)
     result = await db.execute(statement)
     return result.scalars().all()
 
 
-async def get_role_by_id(db: DBSessionDep, role_id: str) -> Optional[Role]:
+async def get_role_by_id(db: AsyncSession, role_id: str) -> Optional[Role]:
     """根据ID获取角色"""
     statement = select(Role).where(Role.id == role_id)
     result = await db.execute(statement)
     return result.scalars().first()
 
 
-async def get_role_by_key(db: DBSessionDep, role_key: str) -> Optional[Role]:
+async def get_role_by_key(db: AsyncSession, role_key: str) -> Optional[Role]:
     """根据角色标识获取角色"""
     statement = select(Role).where(Role.role_key == role_key)
     result = await db.execute(statement)
     return result.scalars().first()
 
 
-async def update_role(db: DBSessionDep, role_id: str, role_data: RoleUpdate) -> bool:
+async def update_role(db: AsyncSession, role_id: str, role_data: RoleUpdate) -> bool:
     """更新角色"""
     statement = select(Role).where(Role.id == role_id)
     result = await db.execute(statement)
@@ -244,7 +243,7 @@ async def update_role(db: DBSessionDep, role_id: str, role_data: RoleUpdate) -> 
     return False
 
 
-async def delete_role(db: DBSessionDep, role_id: str) -> bool:
+async def delete_role(db: AsyncSession, role_id: str) -> bool:
     """删除角色"""
     statement = select(Role).where(Role.id == role_id)
     result = await db.execute(statement)
