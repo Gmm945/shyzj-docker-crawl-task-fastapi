@@ -88,7 +88,7 @@ def execute_scheduled_task(task_schedule: TaskSchedule) -> bool:
     try:
         # 获取任务信息 - 在session中立即提取所有属性
         with make_sync_session() as session:
-            from ..data_platform_api.models.task import Task
+            from ..data_platform_api.models.task import Task, TaskExecution
             task = session.query(Task).filter(Task.id == task_schedule.task_id).first()
             if not task:
                 logger.error(f"任务不存在: {task_schedule.task_id}")
@@ -111,6 +111,52 @@ def execute_scheduled_task(task_schedule: TaskSchedule) -> bool:
                 if execution.task_id == task_schedule.task_id:
                     logger.info(f"任务 {task_schedule.task_id} 正在运行中，跳过")
                     return True
+            
+            # 【新增】检查最近的失败记录，实现失败退避策略
+            # 获取最近5分钟内的执行记录
+            recent_threshold = datetime.now() - timedelta(minutes=5)
+            recent_executions = session.query(TaskExecution).filter(
+                TaskExecution.task_id == task_schedule.task_id,
+                TaskExecution.create_time >= recent_threshold
+            ).order_by(TaskExecution.create_time.desc()).limit(3).all()
+            
+            # 如果最近3次执行都失败了，则使用退避策略
+            if len(recent_executions) >= 3:
+                all_failed = all(exec.status == "failed" for exec in recent_executions)
+                if all_failed:
+                    # 检查Redis中的退避计数
+                    backoff_key = f"task_backoff:{task_schedule.task_id}"
+                    try:
+                        backoff_count = redis_client.get(backoff_key)
+                        backoff_count = int(backoff_count) if backoff_count else 0
+                        
+                        # 计算退避时间：第1次失败等5分钟，第2次10分钟，第3次20分钟，最多1小时
+                        backoff_minutes = min(5 * (2 ** backoff_count), 60)
+                        
+                        # 检查最后一次失败时间
+                        last_execution = recent_executions[0]
+                        if last_execution.end_time:
+                            next_allowed_time = last_execution.end_time + timedelta(minutes=backoff_minutes)
+                            if datetime.now() < next_allowed_time:
+                                logger.warning(
+                                    f"任务 {task_schedule.task_id} 最近连续失败，"
+                                    f"退避中（第{backoff_count + 1}次，等待{backoff_minutes}分钟），跳过执行"
+                                )
+                                return True
+                        
+                        # 增加退避计数，设置24小时过期
+                        redis_client.set(backoff_key, backoff_count + 1, ex=86400)
+                        
+                    except Exception as e:
+                        logger.error(f"处理任务退避策略失败: {e}")
+            else:
+                # 如果有成功执行，清除退避计数
+                try:
+                    if recent_executions and recent_executions[0].status == "success":
+                        backoff_key = f"task_backoff:{task_schedule.task_id}"
+                        redis_client.delete(backoff_key)
+                except:
+                    pass
             
             # 创建任务执行记录
             execution_data = {

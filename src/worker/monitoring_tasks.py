@@ -5,6 +5,7 @@ from typing import Any, Dict, Optional, List
 from uuid import UUID
 from loguru import logger
 from sqlalchemy import text
+import subprocess
 
 from .celeryconfig import celery_app
 from .utils.task_progress_util import BaseTaskWithProgress
@@ -25,6 +26,70 @@ from datetime import datetime, timedelta
 from .celeryconfig import redis_client
 from ..data_platform_api.models.task import ExecutionStatus
 from ..config.auth_config import settings
+
+
+def check_docker_container_status(container_id: str) -> Dict[str, Any]:
+    """
+    检查 Docker 容器的实际状态
+    
+    Returns:
+        dict: {
+            "exists": bool,  # 容器是否存在
+            "running": bool,  # 容器是否正在运行
+            "status": str,  # 容器状态（running/exited/etc）
+            "exit_code": int or None  # 退出码
+        }
+    """
+    try:
+        # 使用 docker inspect 获取容器状态
+        inspect_command = [
+            "ssh", f"root@{settings.DOCKER_HOST_IP}",
+            "docker", "inspect", "--format", 
+            "{{.State.Status}}|{{.State.ExitCode}}|{{.State.Running}}", 
+            container_id
+        ]
+        
+        result = subprocess.run(
+            inspect_command, 
+            capture_output=True, 
+            text=True, 
+            timeout=10
+        )
+        
+        if result.returncode == 0:
+            # 容器存在，解析状态信息
+            status_info = result.stdout.strip().split("|")
+            return {
+                "exists": True,
+                "status": status_info[0],
+                "exit_code": int(status_info[1]) if status_info[1] != "<no value>" else None,
+                "running": status_info[2] == "true"
+            }
+        else:
+            # 容器不存在
+            return {
+                "exists": False,
+                "running": False,
+                "status": "not_found",
+                "exit_code": None
+            }
+            
+    except subprocess.TimeoutExpired:
+        logger.error(f"检查容器状态超时: {container_id}")
+        return {
+            "exists": False,
+            "running": False,
+            "status": "timeout",
+            "exit_code": None
+        }
+    except Exception as e:
+        logger.error(f"检查容器状态异常: {container_id}, {e}")
+        return {
+            "exists": False,
+            "running": False,
+            "status": "error",
+            "exit_code": None
+        }
 
 
 def monitor_task_execution_impl(
@@ -325,7 +390,7 @@ def heartbeat_monitor_impl(
     self,
     namespace: str = "heartbeat_monitor"
 ):
-    """心跳监控任务 - 检测任务超时和失联"""
+    """心跳监控任务 - 检测任务超时和失联，并检查Docker容器实际状态"""
     try:
         self.update_status(0, "PENDING", "开始心跳监控", namespace=namespace)
         
@@ -335,6 +400,7 @@ def heartbeat_monitor_impl(
         
         timeout_count = 0
         disconnect_count = 0
+        container_stopped_count = 0
         processed_count = 0
         
         # 心跳超时配置（秒）
@@ -344,6 +410,48 @@ def heartbeat_monitor_impl(
         for execution in running_executions:
             try:
                 processed_count += 1
+                
+                # 【新增】首先检查 Docker 容器实际状态
+                if execution.docker_container_id:
+                    container_status = check_docker_container_status(execution.docker_container_id)
+                    
+                    # 如果容器不存在或已停止，立即标记为失败
+                    if not container_status.get("exists", False):
+                        logger.warning(f"容器不存在，任务标记为失败: {execution.id}, 容器ID: {execution.docker_container_id}")
+                        update_task_execution_status(
+                            execution.id,
+                            ExecutionStatus.FAILED,
+                            end_time=datetime.now(),
+                            error_log="Docker容器不存在或已被删除"
+                        )
+                        container_stopped_count += 1
+                        continue
+                    
+                    if not container_status.get("running", False):
+                        exit_code = container_status.get("exit_code")
+                        status_str = container_status.get("status", "unknown")
+                        
+                        # 容器已停止，根据退出码判断是否成功
+                        if exit_code == 0:
+                            # 正常退出，但没有调用completion接口，标记为成功
+                            logger.info(f"容器正常退出但未通知，标记为成功: {execution.id}, 容器ID: {execution.docker_container_id}")
+                            update_task_execution_status(
+                                execution.id,
+                                ExecutionStatus.SUCCESS,
+                                end_time=datetime.now(),
+                                error_log=f"容器正常退出(exit_code=0)但未调用completion接口"
+                            )
+                        else:
+                            # 异常退出
+                            logger.error(f"容器异常退出，任务标记为失败: {execution.id}, 容器ID: {execution.docker_container_id}, 退出码: {exit_code}, 状态: {status_str}")
+                            update_task_execution_status(
+                                execution.id,
+                                ExecutionStatus.FAILED,
+                                end_time=datetime.now(),
+                                error_log=f"Docker容器异常退出 (exit_code={exit_code}, status={status_str})"
+                            )
+                        container_stopped_count += 1
+                        continue
                 
                 # 检查是否有心跳记录
                 if not execution.last_heartbeat:
@@ -411,7 +519,7 @@ def heartbeat_monitor_impl(
                 continue
         
         self.update_status(100, "SUCCESS", 
-                          f"心跳监控完成，处理了 {processed_count} 个任务，{timeout_count} 个超时，{disconnect_count} 个失联", 
+                          f"心跳监控完成，处理了 {processed_count} 个任务，{timeout_count} 个超时，{disconnect_count} 个失联，{container_stopped_count} 个容器已停止", 
                           namespace=namespace)
         
         return {
@@ -419,6 +527,7 @@ def heartbeat_monitor_impl(
             "processed_count": processed_count,
             "timeout_count": timeout_count,
             "disconnect_count": disconnect_count,
+            "container_stopped_count": container_stopped_count,
             "message": "心跳监控完成"
         }
         
