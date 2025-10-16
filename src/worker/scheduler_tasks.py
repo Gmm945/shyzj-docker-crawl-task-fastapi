@@ -15,7 +15,8 @@ from .db_tasks import (
     cleanup_old_executions,
     save_task_execution_to_db
 )
-from ..data_platform_api.models.task import TaskSchedule, Task, ScheduleType
+from ..data_platform_api.models.task import TaskSchedule, Task, TaskExecution, ScheduleType
+from ..utils.schedule_utils import ScheduleUtils
 
 
 def process_scheduled_tasks_impl(
@@ -88,7 +89,6 @@ def execute_scheduled_task(task_schedule: TaskSchedule) -> bool:
     try:
         # 获取任务信息 - 在session中立即提取所有属性
         with make_sync_session() as session:
-            from ..data_platform_api.models.task import Task, TaskExecution
             task = session.query(Task).filter(Task.id == task_schedule.task_id).first()
             if not task:
                 logger.error(f"任务不存在: {task_schedule.task_id}")
@@ -112,49 +112,44 @@ def execute_scheduled_task(task_schedule: TaskSchedule) -> bool:
                     logger.info(f"任务 {task_schedule.task_id} 正在运行中，跳过")
                     return True
             
-            # 【新增】检查最近的失败记录，实现失败退避策略
-            # 获取最近5分钟内的执行记录
-            recent_threshold = datetime.now() - timedelta(minutes=5)
+            # 【新增】检查连续失败记录，连续失败后自动禁用调度
+            # 获取最近的3次执行记录（不限时间）
             recent_executions = session.query(TaskExecution).filter(
-                TaskExecution.task_id == task_schedule.task_id,
-                TaskExecution.create_time >= recent_threshold
+                TaskExecution.task_id == task_schedule.task_id
             ).order_by(TaskExecution.create_time.desc()).limit(3).all()
             
-            # 如果最近3次执行都失败了，则使用退避策略
+            # 如果最近3次执行都失败了，自动禁用调度
             if len(recent_executions) >= 3:
                 all_failed = all(exec.status == "failed" for exec in recent_executions)
                 if all_failed:
-                    # 检查Redis中的退避计数
-                    backoff_key = f"task_backoff:{task_schedule.task_id}"
+                    logger.error(
+                        f"任务 {task_schedule.task_id} 连续失败3次，自动禁用调度。"
+                        f"失败时间: {[str(e.end_time) for e in recent_executions]}"
+                    )
+                    
+                    # 禁用调度
+                    schedule = session.query(TaskSchedule).filter(
+                        TaskSchedule.id == task_schedule.id
+                    ).first()
+                    if schedule:
+                        schedule.is_active = False
+                        session.commit()
+                        logger.info(f"调度 {task_schedule.id} 已被自动禁用，请修复问题后手动重新启用")
+                    
+                    # 清理 Redis 中的退避计数（如果有）
                     try:
-                        backoff_count = redis_client.get(backoff_key)
-                        backoff_count = int(backoff_count) if backoff_count else 0
-                        
-                        # 计算退避时间：第1次失败等5分钟，第2次10分钟，第3次20分钟，最多1小时
-                        backoff_minutes = min(5 * (2 ** backoff_count), 60)
-                        
-                        # 检查最后一次失败时间
-                        last_execution = recent_executions[0]
-                        if last_execution.end_time:
-                            next_allowed_time = last_execution.end_time + timedelta(minutes=backoff_minutes)
-                            if datetime.now() < next_allowed_time:
-                                logger.warning(
-                                    f"任务 {task_schedule.task_id} 最近连续失败，"
-                                    f"退避中（第{backoff_count + 1}次，等待{backoff_minutes}分钟），跳过执行"
-                                )
-                                return True
-                        
-                        # 增加退避计数，设置24小时过期
-                        redis_client.set(backoff_key, backoff_count + 1, ex=86400)
-                        
-                    except Exception as e:
-                        logger.error(f"处理任务退避策略失败: {e}")
-            else:
-                # 如果有成功执行，清除退避计数
-                try:
-                    if recent_executions and recent_executions[0].status == "success":
                         backoff_key = f"task_backoff:{task_schedule.task_id}"
                         redis_client.delete(backoff_key)
+                    except:
+                        pass
+                    
+                    return False  # 不执行新任务
+            
+            # 如果有成功执行，清除失败计数
+            if recent_executions and recent_executions[0].status == "success":
+                try:
+                    backoff_key = f"task_backoff:{task_schedule.task_id}"
+                    redis_client.delete(backoff_key)
                 except:
                     pass
             
@@ -211,8 +206,15 @@ def update_next_run_time(task_schedule: TaskSchedule) -> bool:
             if not schedule:
                 return False
             
-            # 根据调度类型计算下次执行时间
-            next_time = calculate_next_run_time(schedule)
+            # 使用 ScheduleUtils 计算下次执行时间
+            config = schedule.schedule_config or {}
+            next_time = ScheduleUtils.calculate_next_run_time(schedule.schedule_type, config)
+            
+            # 处理特殊调度类型
+            if schedule.schedule_type == ScheduleType.SCHEDULED:
+                # 一次性调度，执行后禁用
+                schedule.is_active = False
+                
             if next_time:
                 schedule.next_run_time = next_time
                 session.commit()
@@ -224,110 +226,6 @@ def update_next_run_time(task_schedule: TaskSchedule) -> bool:
     except Exception as e:
         logger.error(f"更新下次执行时间失败: {e}")
         return False
-
-
-def calculate_next_run_time(schedule: TaskSchedule) -> Optional[datetime]:
-    """计算下次执行时间"""
-    try:
-        current_time = datetime.now()
-        config = schedule.schedule_config or {}
-        
-        if schedule.schedule_type == ScheduleType.IMMEDIATE:
-            return None  # 立即执行，不需要下次执行时间
-            
-        elif schedule.schedule_type == ScheduleType.SCHEDULED:
-            # 一次性调度，执行后禁用
-            schedule.is_active = False
-            return None
-            
-        elif schedule.schedule_type == ScheduleType.MINUTELY:
-            # 每N分钟执行：{"interval": 5}
-            interval = config.get("interval", 1)
-            return current_time + timedelta(minutes=interval)
-            
-        elif schedule.schedule_type == ScheduleType.HOURLY:
-            # 每N小时执行：{"interval": 2}
-            interval = config.get("interval", 1)
-            return current_time + timedelta(hours=interval)
-            
-        elif schedule.schedule_type == ScheduleType.DAILY:
-            # 每天指定时间执行：{"time": "09:00:00"}
-            time_str = config.get("time", "00:00:00")
-            hour, minute, second = map(int, time_str.split(":"))
-            next_time = current_time.replace(hour=hour, minute=minute, second=second, microsecond=0)
-            
-            # 如果今天的时间已过，则安排到明天
-            if next_time <= current_time:
-                next_time = next_time + timedelta(days=1)
-            
-            return next_time
-            
-        elif schedule.schedule_type == ScheduleType.WEEKLY:
-            # 每周执行 - 使用配置中的具体设置
-            days = config.get("days", [])
-            time_str = config.get("time", "00:00:00")
-            
-            if days and time_str:
-                # 如果有详细配置，按配置计算
-                hour, minute, second = map(int, time_str.split(":"))
-                
-                # 找到下一个执行日期
-                for i in range(7):
-                    check_date = current_time + timedelta(days=i)
-                    if check_date.weekday() + 1 in days:  # weekday()返回0-6，我们需要1-7
-                        next_time = check_date.replace(hour=hour, minute=minute, second=second, microsecond=0)
-                        if next_time > current_time:
-                            return next_time
-                
-                # 如果本周没有找到，则查找下周
-                for i in range(7, 14):
-                    check_date = current_time + timedelta(days=i)
-                    if check_date.weekday() + 1 in days:
-                        next_time = check_date.replace(hour=hour, minute=minute, second=second, microsecond=0)
-                        return next_time
-            else:
-                # 简单模式：每周执行一次
-                return current_time + timedelta(weeks=1)
-            
-        elif schedule.schedule_type == ScheduleType.MONTHLY:
-            # 每月执行 - 使用配置中的具体设置
-            dates = config.get("dates", [])
-            time_str = config.get("time", "00:00:00")
-            
-            if dates and time_str:
-                # 如果有详细配置，按配置计算
-                hour, minute, second = map(int, time_str.split(":"))
-                
-                # 查找本月的执行日期
-                for date in dates:
-                    try:
-                        next_time = current_time.replace(day=date, hour=hour, minute=minute, second=second, microsecond=0)
-                        if next_time > current_time:
-                            return next_time
-                    except ValueError:
-                        continue  # 日期不存在（如2月30日）
-                
-                # 如果本月没有找到，查找下个月
-                next_month = current_time.replace(day=1) + timedelta(days=32)
-                next_month = next_month.replace(day=1)
-                
-                for date in dates:
-                    try:
-                        next_time = next_month.replace(day=date, hour=hour, minute=minute, second=second, microsecond=0)
-                        return next_time
-                    except ValueError:
-                        continue
-            else:
-                # 简单模式：每30天执行一次
-                return current_time + timedelta(days=30)
-            
-        else:
-            logger.warning(f"未知的调度类型: {schedule.schedule_type}")
-            return None
-            
-    except Exception as e:
-        logger.error(f"计算下次执行时间失败: {e}")
-        return None
 
 
 def daily_cleanup_task_impl(

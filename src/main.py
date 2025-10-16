@@ -10,7 +10,8 @@ import sys
 from .db_util.db import sessionmanager
 from .config.auth_config import settings
 from .data_platform_api.main import api_router
-from .utils.scheduler import schedule_manager
+# 注：FastAPI 内置调度器已禁用，统一使用 Celery Beat 进行任务调度
+# from .utils.scheduler import schedule_manager
 
 
 # 配置日志
@@ -30,12 +31,13 @@ async def lifespan(app: FastAPI):
     logger.info("数据采集任务管理系统启动中...")
     
     try:
-        # 启动任务调度器
-        schedule_manager.start()
-        logger.info("任务调度器启动完成")
+        # 注：FastAPI 内置调度器已禁用，统一使用 Celery Beat 进行任务调度
+        # schedule_manager.start()
+        # logger.info("任务调度器启动完成")
         
         logger.info("数据采集任务管理系统启动完成")
         logger.info("💡 Casbin 权限系统采用按需加载模式")
+        logger.info("📅 任务调度由 Celery Beat 管理（每分钟检查一次）")
         
     except Exception as e:
         logger.error(f"系统启动失败: {e}")

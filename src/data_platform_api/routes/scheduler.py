@@ -8,7 +8,8 @@ from ...user_manage.models.user import User
 from ...common.schemas.base import ResponseModel
 from ...user_manage.routes.auth import get_current_active_user
 from ...user_manage.service.security import check_permissions
-from ...utils.scheduler import schedule_manager
+# 注：FastAPI 内置调度器已禁用，统一使用 Celery Beat 进行任务调度
+# from ...utils.scheduler import schedule_manager
 from ...utils.schedule_utils import ScheduleUtils
 
 from ..models.task import TaskSchedule
@@ -63,9 +64,9 @@ async def create_task_schedule(
     logger.info(f"计算调度下次执行时间: {next_run_time}")
     # 创建调度
     db_schedule = await create_schedule(db, task_id_str, schedule_data.schedule_type, schedule_data.schedule_config, next_run_time)
-    # 添加到调度器
-    schedule_manager.add_schedule(db_schedule)
-    logger.info(f"成功创建调度 {db_schedule.id} for task {task_id_str}")
+    # 注：调度由 Celery Beat 自动从数据库读取，无需添加到内存调度器
+    # schedule_manager.add_schedule(db_schedule)
+    logger.info(f"成功创建调度 {db_schedule.id} for task {task_id_str}, 下次执行: {next_run_time}")
     return ResponseModel(message="调度创建成功", data={"schedule_id": db_schedule.id})
 
 
@@ -147,11 +148,11 @@ async def toggle_schedule(
         logger.info(f"禁用调度 {schedule_id}")
     # 更新调度状态
     await update_schedule_status(db, schedule, new_status, next_run_time)
-    # 更新调度器
-    if new_status:
-        schedule_manager.add_schedule(schedule)
-    else:
-        schedule_manager.remove_schedule(schedule.id)
+    # 注：调度由 Celery Beat 自动从数据库读取，无需更新内存调度器
+    # if new_status:
+    #     schedule_manager.add_schedule(schedule)
+    # else:
+    #     schedule_manager.remove_schedule(schedule.id)
     
     status_text = "启用" if new_status else "禁用"
     return ResponseModel(message=f"调度{status_text}成功")
@@ -188,9 +189,8 @@ async def delete_schedule(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="无权删除此调度"
         )
-    # 从调度器中移除
-    schedule_manager.remove_schedule(schedule.id)
-    logger.info(f"从调度器中移除调度 {schedule_id}")
+    # 注：调度由 Celery Beat 自动从数据库读取，无需从内存调度器移除
+    # schedule_manager.remove_schedule(schedule.id)
     # 删除调度
     await db.delete(schedule)
     await db.commit()
