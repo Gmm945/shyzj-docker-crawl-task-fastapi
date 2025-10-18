@@ -17,6 +17,7 @@ from .db_tasks import (
     get_user_by_id,
     update_task_status,
     make_sync_session,
+    get_task_execution_by_id,
 )
 from ..config.auth_config import settings
 from ..data_platform_api.models.task import Task, TaskExecution, ExecutionStatus
@@ -122,7 +123,7 @@ def execute_data_collection_task_impl(
                 end_time=datetime.now(),
                 error_log=str(e)
             )
-            update_task_status(task_id, "paused")
+            # 移除自动暂停任务逻辑：任务失败就是失败，不自动暂停
         except Exception as update_error:
             logger.error(f"更新任务状态失败: {update_error}")
         
@@ -135,34 +136,20 @@ def _execute_crawler_task_with_docker(task_name: str, execution_id: str, config_
     container_id = None
     try:
         logger.info(f"使用Docker执行爬虫任务: {task_name}")
-        
         # 验证配置
         cfg = config_data or {}
         logger.info(f"收到配置数据: {cfg is not None}, keys: {list(cfg.keys()) if cfg else '空'}")
-        
         if cfg:
             is_valid, error_msg = validate_task_config(cfg)
             if not is_valid:
                 raise ValueError(f"配置验证失败: {error_msg}")
         
-        # 处理配置文件 - 强制创建，即使配置为空
-        if True:  # 总是创建配置文件
-            # 为测试与稳定心跳，若未提供目标与延迟，设置约1分钟的默认爬取参数
-            try:
-                if cfg.get("task_type") == "docker-crawl":
-                    if not cfg.get("target_urls") and cfg.get("base_url"):
-                        # 30 次 × 2 秒 ≈ 60 秒
-                        cfg["target_urls"] = [cfg["base_url"]] * 30
-                    if not cfg.get("delay"):
-                        cfg["delay"] = 2
-            except Exception:
-                pass
-            config_saved = process_task_config_file(cfg, UUID(execution_id))
-            if not config_saved:
-                raise Exception("配置文件处理失败")
+        # 处理配置文件 - 将配置保存到文件供容器使用
+        config_saved = process_task_config_file(cfg, UUID(execution_id))
+        if not config_saved:
+            raise Exception("配置文件处理失败")
         
         # 从数据库获取配置文件路径
-        from .db_tasks import get_task_execution_by_id
         execution = get_task_execution_by_id(execution_id)
         config_path = execution.docker_config_path if execution and execution.docker_config_path else f"/tmp/task_configs/{execution_id}/config.json"
         logger.info(f"使用配置文件路径: {config_path}")
@@ -258,7 +245,6 @@ def _execute_api_task_with_docker(task_name: str, execution_id: str, config_data
                 raise Exception("配置文件处理失败")
         
         # 从数据库获取配置文件路径
-        from .db_tasks import get_task_execution_by_id
         execution = get_task_execution_by_id(execution_id)
         config_path = execution.docker_config_path if execution and execution.docker_config_path else f"/tmp/task_configs/{execution_id}/config.json"
         logger.info(f"使用配置文件路径: {config_path}")
@@ -348,7 +334,6 @@ def _execute_database_task_with_docker(task_name: str, execution_id: str, config
                 raise Exception("配置文件处理失败")
         
         # 从数据库获取配置文件路径
-        from .db_tasks import get_task_execution_by_id
         execution = get_task_execution_by_id(execution_id)
         config_path = execution.docker_config_path if execution and execution.docker_config_path else f"/tmp/task_configs/{execution_id}/config.json"
         logger.info(f"使用配置文件路径: {config_path}")

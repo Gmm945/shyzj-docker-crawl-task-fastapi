@@ -2,7 +2,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from uuid import UUID
-from ..models.task import TaskType, TaskStatus, ExecutionStatus, ScheduleType
+from ..models.task import TaskType, TaskStatus, ExecutionStatus, ScheduleType, TriggerMethod
 from ...common.schemas.base import PaginationModel
 
 
@@ -48,6 +48,7 @@ class DatabaseConfig(BaseModel):
 class TaskBase(BaseModel):
     task_name: str
     task_type: TaskType
+    trigger_method: TriggerMethod = TriggerMethod.MANUAL
     base_url: Optional[str] = None
     base_url_params: Optional[List[UrlParam]] = None
     need_user_login: int = 0  # 0-否，1-是
@@ -61,18 +62,24 @@ class TaskCreate(TaskBase):
     # 继承 TaskBase 的所有字段，并添加字段级别的验证和说明
     task_name: str = Field(..., min_length=1, max_length=100, description="任务名称，必填，1-100字符")
     task_type: TaskType = Field(..., description="任务类型，必填")
+    trigger_method: TriggerMethod = Field(default=TriggerMethod.MANUAL, description="触发方式，manual-手动，auto-自动")
     base_url: Optional[str] = Field(None, max_length=500, description="基础URL，最大500字符")
     base_url_params: Optional[List[UrlParam]] = Field(default=None, description="URL参数列表")
     need_user_login: int = Field(default=0, ge=0, le=1, description="是否需要用户登录，0-否，1-是")
     extract_config: Optional[ExtractConfig] = Field(default=None, description="数据提取配置")
     description: Optional[str] = Field(None, max_length=500, description="任务描述，最大500字符")
     
+    # 调度配置（当trigger_method为auto时必填）
+    schedule_type: Optional[ScheduleType] = Field(None, description="调度类型，auto模式时必填")
+    schedule_config: Optional[Dict[str, Any]] = Field(None, description="调度配置，auto模式时必填")
+    
     model_config = {
         "json_schema_extra": {
             "examples": [
                 {
-                    "task_name": "示例API任务",
+                    "task_name": "示例手动任务",
                     "task_type": "api",
+                    "trigger_method": "manual",
                     "base_url": "https://api.example.com/data",
                     "base_url_params": [],
                     "need_user_login": 0,
@@ -82,7 +89,18 @@ class TaskCreate(TaskBase):
                         "extract_dataset_idtf": "api_data",
                         "extract_fields": []
                     },
-                    "description": "这是一个示例API数据采集任务"
+                    "description": "这是一个手动执行的API数据采集任务"
+                },
+                {
+                    "task_name": "示例自动任务",
+                    "task_type": "docker-crawl",
+                    "trigger_method": "auto",
+                    "base_url": "https://example.com",
+                    "description": "这是一个自动执行的爬虫任务",
+                    "schedule_type": "hourly",
+                    "schedule_config": {
+                        "interval": 2
+                    }
                 }
             ]
         }
@@ -92,6 +110,7 @@ class TaskCreate(TaskBase):
 class TaskUpdate(BaseModel):
     task_name: Optional[str] = None
     task_type: Optional[TaskType] = None
+    trigger_method: Optional[TriggerMethod] = None
     base_url: Optional[str] = None
     base_url_params: Optional[List[UrlParam]] = None
     need_user_login: Optional[int] = None
@@ -100,12 +119,23 @@ class TaskUpdate(BaseModel):
     status: Optional[TaskStatus] = None
 
 
+class TaskExecutionSummary(BaseModel):
+    """任务执行统计信息"""
+    total_executions: int = Field(description="总执行次数")
+    success_count: int = Field(description="成功次数")
+    failed_count: int = Field(description="失败次数")
+    last_execution_status: Optional[str] = Field(None, description="最后一次执行状态")
+    last_execution_time: Optional[datetime] = Field(None, description="最后一次执行时间")
+    next_execution_time: Optional[datetime] = Field(None, description="下次执行时间（仅自动任务）")
+
+
 class TaskResponse(TaskBase):
     id: str
     status: TaskStatus
     creator_id: str
     create_time: datetime
     update_time: datetime
+    execution_summary: Optional[TaskExecutionSummary] = Field(None, description="执行统计信息")
     
     model_config = {
         "from_attributes": True,

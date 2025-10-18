@@ -16,6 +16,11 @@ class TaskStatus(str, enum.Enum):
     RUNNING = "running"
 
 
+class TriggerMethod(str, enum.Enum):
+    MANUAL = "manual"
+    AUTO = "auto"
+
+
 class ExecutionStatus(str, enum.Enum):
     PENDING = "pending"
     RUNNING = "running"
@@ -41,6 +46,7 @@ class Task(BaseModel):
     task_name = Column(String(200), nullable=False, comment="任务名称")
     task_type = Column(String(50), nullable=False, comment="任务类型")
     status = Column(String(50), default="active", comment="任务状态")
+    trigger_method = Column(String(20), default="manual", comment="触发方式：manual-手动，auto-自动")
     
     # 爬虫配置
     base_url = Column(Text, nullable=True, comment="基础URL")

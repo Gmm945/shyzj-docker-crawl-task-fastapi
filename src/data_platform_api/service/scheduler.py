@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
 from ..models.task import TaskSchedule
+from ...utils.schedule_utils import ScheduleUtils
 
 
 async def get_schedule_by_id(db: AsyncSession, schedule_id: str) -> Optional[TaskSchedule]:
@@ -20,6 +21,17 @@ async def get_active_schedule_by_task_id(db: AsyncSession, task_id: str) -> Opti
             TaskSchedule.task_id == task_id,
             TaskSchedule.is_active == True
         )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_schedule_by_task_id(db: AsyncSession, task_id: str) -> Optional[TaskSchedule]:
+    """获取任务的调度配置（无论是否活跃）"""
+    result = await db.execute(
+        select(TaskSchedule).where(
+            TaskSchedule.task_id == task_id,
+            TaskSchedule.is_delete == False
+        ).order_by(TaskSchedule.create_time.desc()).limit(1)
     )
     return result.scalar_one_or_none()
 
@@ -87,4 +99,24 @@ async def get_all_active_schedules(db: AsyncSession) -> List[TaskSchedule]:
         .order_by(TaskSchedule.next_run_time)
     )
     return result.scalars().all()
+
+
+async def update_schedule_config(
+    db: AsyncSession,
+    schedule: TaskSchedule,
+    schedule_type: str,
+    schedule_config: dict
+) -> TaskSchedule:
+    """更新调度配置"""
+    # 更新调度类型和配置
+    schedule.schedule_type = schedule_type
+    schedule.schedule_config = schedule_config
+    
+    # 重新计算下次执行时间
+    next_run_time = ScheduleUtils.calculate_next_run_time(schedule_type, schedule_config)
+    schedule.next_run_time = next_run_time
+    
+    await db.commit()
+    logger.info(f"更新调度配置成功: {schedule.id}, 下次执行时间: {next_run_time}")
+    return schedule
 

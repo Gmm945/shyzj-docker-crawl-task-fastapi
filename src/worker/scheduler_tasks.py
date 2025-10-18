@@ -70,12 +70,17 @@ def get_scheduled_tasks() -> List[TaskSchedule]:
         current_time = datetime.now()
         
         with make_sync_session() as session:
-            # 查询需要执行的任务调度
-            scheduled_tasks = session.query(TaskSchedule).filter(
+            # 查询需要执行的任务调度，同时检查任务状态
+            # 每个任务只获取最新的一个调度配置
+            scheduled_tasks = session.query(TaskSchedule).join(
+                Task, TaskSchedule.task_id == Task.id
+            ).filter(
                 TaskSchedule.is_active == True,
                 TaskSchedule.next_run_time <= current_time,
-                TaskSchedule.is_delete == False
-            ).all()
+                TaskSchedule.is_delete == False,
+                Task.is_delete == False,
+                Task.status == "active"  # 只执行激活状态的任务
+            ).order_by(TaskSchedule.task_id, TaskSchedule.create_time.desc()).distinct(TaskSchedule.task_id).all()
             
             return scheduled_tasks
             
@@ -112,46 +117,7 @@ def execute_scheduled_task(task_schedule: TaskSchedule) -> bool:
                     logger.info(f"任务 {task_schedule.task_id} 正在运行中，跳过")
                     return True
             
-            # 【新增】检查连续失败记录，连续失败后自动禁用调度
-            # 获取最近的3次执行记录（不限时间）
-            recent_executions = session.query(TaskExecution).filter(
-                TaskExecution.task_id == task_schedule.task_id
-            ).order_by(TaskExecution.create_time.desc()).limit(3).all()
-            
-            # 如果最近3次执行都失败了，自动禁用调度
-            if len(recent_executions) >= 3:
-                all_failed = all(exec.status == "failed" for exec in recent_executions)
-                if all_failed:
-                    logger.error(
-                        f"任务 {task_schedule.task_id} 连续失败3次，自动禁用调度。"
-                        f"失败时间: {[str(e.end_time) for e in recent_executions]}"
-                    )
-                    
-                    # 禁用调度
-                    schedule = session.query(TaskSchedule).filter(
-                        TaskSchedule.id == task_schedule.id
-                    ).first()
-                    if schedule:
-                        schedule.is_active = False
-                        session.commit()
-                        logger.info(f"调度 {task_schedule.id} 已被自动禁用，请修复问题后手动重新启用")
-                    
-                    # 清理 Redis 中的退避计数（如果有）
-                    try:
-                        backoff_key = f"task_backoff:{task_schedule.task_id}"
-                        redis_client.delete(backoff_key)
-                    except:
-                        pass
-                    
-                    return False  # 不执行新任务
-            
-            # 如果有成功执行，清除失败计数
-            if recent_executions and recent_executions[0].status == "success":
-                try:
-                    backoff_key = f"task_backoff:{task_schedule.task_id}"
-                    redis_client.delete(backoff_key)
-                except:
-                    pass
+            # 移除重试逻辑：任务失败就是失败，不进行重试
             
             # 创建任务执行记录
             execution_data = {

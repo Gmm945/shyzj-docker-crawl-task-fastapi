@@ -9,13 +9,12 @@ from ...config.auth_config import settings
 from ...db_util.core import DBSessionDep
 from ...user_manage.models.user import User
 from ...common.schemas.base import ResponseModel
-from ...user_manage.routes.auth import get_current_active_user
 from ...user_manage.service.security import check_permissions
 from ...worker.main import execute_data_collection_task, stop_docker_container
-from ..models.task import Task, TaskStatus, ExecutionStatus
+from ..models.task import Task, TaskStatus, ExecutionStatus, TriggerMethod
 from ..schemas.task import (
     TaskCreate, TaskUpdate, TaskResponse, TaskExecutionResponse, 
-    TaskPagination
+    TaskPagination, TriggerMethod
 )
 from ..service.task import (
     create_task,
@@ -33,8 +32,11 @@ from ..service.task import (
     get_task_status_info,
     activate_task_with_validation,
     deactivate_task_with_validation,
-    fix_stopped_tasks_status
+    fix_stopped_tasks_status,
+    get_task_execution_summary
 )
+from ..service.scheduler import create_schedule
+from ...utils.schedule_utils import ScheduleUtils
 
 router = APIRouter()
 obj = 'Task'  # 资源对象名称
@@ -75,10 +77,24 @@ async def add_task(
         extract_config_data = req_body.extract_config.model_dump()
         logger.info(f"处理extract_config: 已处理")
 
+    # 验证trigger_method和调度配置的一致性
+    if req_body.trigger_method == TriggerMethod.AUTO:
+        if not req_body.schedule_type or not req_body.schedule_config:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="自动任务必须提供schedule_type和schedule_config参数"
+            )
+        logger.info(f"创建自动任务，调度类型: {req_body.schedule_type}")
+    else:
+        if req_body.schedule_type or req_body.schedule_config:
+            logger.warning(f"手动任务不需要调度配置，将忽略schedule_type和schedule_config")
+        logger.info(f"创建手动任务")
+
     # 创建任务（直接激活）
     db_task = Task(
         task_name=req_body.task_name,
         task_type=req_body.task_type,
+        trigger_method=req_body.trigger_method,
         base_url=req_body.base_url,
         base_url_params=base_url_params_data,
         need_user_login=bool(req_body.need_user_login),
@@ -90,7 +106,30 @@ async def add_task(
     
     logger.info(f"创建任务对象 - base_url_params: {db_task.base_url_params}, extract_config: {db_task.extract_config}")
     new_task = await create_task(db, db_task)
-    res = ResponseModel(message="任务创建成功", data={"task_id": new_task.id})
+    
+    # 如果是自动任务，则创建调度
+    schedule_id = None
+    if req_body.trigger_method == TriggerMethod.AUTO:
+        # 计算下次执行时间
+        next_run_time = ScheduleUtils.calculate_next_run_time(req_body.schedule_type, req_body.schedule_config)
+        logger.info(f"为任务 {new_task.id} 创建调度，下次执行时间: {next_run_time}")
+        
+        # 创建调度
+        schedule = await create_schedule(
+            db, 
+            str(new_task.id), 
+            req_body.schedule_type, 
+            req_body.schedule_config, 
+            next_run_time
+        )
+        schedule_id = schedule.id
+        logger.info(f"任务 {new_task.id} 的调度创建成功: {schedule_id}")
+    
+    response_data = {"task_id": new_task.id}
+    if schedule_id:
+        response_data["schedule_id"] = schedule_id
+    
+    res = ResponseModel(message="任务创建成功", data=response_data)
     return Response(content=res.model_dump_json())
 
 
@@ -133,7 +172,14 @@ async def get_task_list(
         else:
             raise e
     
-    task_list = [TaskResponse.model_validate(task) for task in tasks]
+    # 为每个任务添加执行统计信息
+    task_list = []
+    for task in tasks:
+        task_data = TaskResponse.model_validate(task)
+        # 获取执行统计信息
+        execution_summary = await get_task_execution_summary(db, str(task.id))
+        task_data.execution_summary = execution_summary
+        task_list.append(task_data)
     
     return ResponseModel(message="获取任务列表成功", data={
         "items": task_list,
@@ -170,14 +216,18 @@ async def get_task(
     # 获取任务数据并添加访问地址信息
     task_data = TaskResponse.model_validate(task)
     
+    # 获取执行统计信息
+    execution_summary = await get_task_execution_summary(db, str(task_id))
+    task_data.execution_summary = execution_summary
+    
     # 如果有正在运行的执行，添加访问地址
     if hasattr(task_data, 'running_execution') and task_data.running_execution:
         execution = task_data.running_execution
         if execution.docker_port:
             docker_host = settings.DOCKER_HOST_IP
             execution.docker_access_url = f"http://{docker_host}:{execution.docker_port}"
-    
     return ResponseModel(message="获取任务详情成功", data=task_data)
+
 
 @router.put("/{task_id}")
 async def update_task(
@@ -239,8 +289,8 @@ async def delete_task(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=message
             )
-    
     return ResponseModel(message=message)
+
 
 @router.post("/{task_id}/execute")
 async def execute_task_now(
@@ -304,6 +354,7 @@ async def execute_task_now(
     execute_data_collection_task.delay(str(task.id), str(db_execution.id), config_data)
     return ResponseModel(message="任务已提交执行", data={"execution_id": db_execution.id})
 
+
 @router.post("/{task_id}/stop")
 async def stop_task(
     task_id: UUID,
@@ -336,8 +387,8 @@ async def stop_task(
     # 停止Docker容器（通过Celery任务）
     if running_execution.docker_container_name:
         stop_docker_container.delay(running_execution.docker_container_name)
-    
     return ResponseModel(message=message)
+
 
 @router.get("/{task_id}/executions")
 async def get_task_executions(

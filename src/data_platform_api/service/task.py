@@ -6,8 +6,8 @@ from sqlalchemy.sql.functions import count
 from loguru import logger
 from datetime import datetime
 
-from ..models.task import Task, TaskExecution, TaskStatus, ExecutionStatus
-from ..schemas.task import TaskPagination, TaskUpdate
+from ..models.task import Task, TaskExecution, TaskStatus, ExecutionStatus, TaskSchedule
+from ..schemas.task import TaskPagination, TaskUpdate, TaskExecutionSummary
 
 
 async def create_task(db: AsyncSession, task: Task):
@@ -169,6 +169,19 @@ async def update_task_with_validation(db: AsyncSession, task_id: UUID, update_da
     else:
         # 如果已经是字典，直接使用
         update_dict = update_data
+    
+    # 如果触发方式从auto改为manual，需要禁用调度
+    if update_dict.get("trigger_method") == "manual" and task.trigger_method == "auto":
+        # 查找并禁用任务的调度
+        schedule_stmt = select(TaskSchedule).where(
+            and_(TaskSchedule.task_id == str(task_id), TaskSchedule.is_delete == False)
+        ).order_by(TaskSchedule.create_time.desc()).limit(1)
+        schedule_result = await db.execute(schedule_stmt)
+        schedule = schedule_result.scalars().first()
+        
+        if schedule:
+            schedule.is_active = False
+            logger.info(f"任务 {task_id} 从自动改为手动，已禁用调度 {schedule.id}")
     
     for field, value in update_dict.items():
         if field in ["base_url_params", "extract_config"] and value is not None:
@@ -364,3 +377,66 @@ async def fix_stopped_tasks_status(db: AsyncSession):
     except Exception as e:
         await db.rollback()
         return False, f"修复STOPPED状态失败: {e}"
+
+
+async def get_task_execution_summary(db: AsyncSession, task_id: str) -> TaskExecutionSummary:
+    """获取任务执行统计信息"""
+    try:
+        # 获取总执行次数
+        total_stmt = select(count(TaskExecution.id)).where(TaskExecution.task_id == task_id)
+        total_result = await db.execute(total_stmt)
+        total_executions = total_result.scalar() or 0
+        
+        # 获取成功次数
+        success_stmt = select(count(TaskExecution.id)).where(
+            and_(TaskExecution.task_id == task_id, TaskExecution.status == ExecutionStatus.SUCCESS)
+        )
+        success_result = await db.execute(success_stmt)
+        success_count = success_result.scalar() or 0
+        
+        # 获取失败次数
+        failed_stmt = select(count(TaskExecution.id)).where(
+            and_(TaskExecution.task_id == task_id, TaskExecution.status == ExecutionStatus.FAILED)
+        )
+        failed_result = await db.execute(failed_stmt)
+        failed_count = failed_result.scalar() or 0
+        
+        # 获取最后一次执行信息
+        last_execution_stmt = select(TaskExecution).where(
+            TaskExecution.task_id == task_id
+        ).order_by(TaskExecution.create_time.desc()).limit(1)
+        last_execution_result = await db.execute(last_execution_stmt)
+        last_execution = last_execution_result.scalars().first()
+        
+        last_execution_status = last_execution.status if last_execution else None
+        last_execution_time = last_execution.end_time if last_execution else None
+        
+        # 获取下次执行时间（仅自动任务）
+        next_execution_time = None
+        schedule_stmt = select(TaskSchedule).where(
+            and_(TaskSchedule.task_id == task_id, TaskSchedule.is_delete == False)
+        ).order_by(TaskSchedule.create_time.desc()).limit(1)
+        schedule_result = await db.execute(schedule_stmt)
+        schedule = schedule_result.scalars().first()
+        if schedule and schedule.is_active:
+            next_execution_time = schedule.next_run_time
+        
+        return TaskExecutionSummary(
+            total_executions=total_executions,
+            success_count=success_count,
+            failed_count=failed_count,
+            last_execution_status=last_execution_status,
+            last_execution_time=last_execution_time,
+            next_execution_time=next_execution_time
+        )
+        
+    except Exception as e:
+        logger.error(f"获取任务执行统计信息失败: {e}")
+        return TaskExecutionSummary(
+            total_executions=0,
+            success_count=0,
+            failed_count=0,
+            last_execution_status=None,
+            last_execution_time=None,
+            next_execution_time=None
+        )
