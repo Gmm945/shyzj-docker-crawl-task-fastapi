@@ -1,52 +1,47 @@
-# 数据采集任务管理系统 - 文档中心
+# 数据采集任务管理系统
 
-## 📖 文档导航
+## 📖 项目简介
 
-本项目是一个基于 FastAPI、Celery、MySQL、Redis 的数据采集任务管理平台，支持 Docker 容器化任务执行。
+本项目是一个基于 FastAPI、Celery、MySQL、Redis 的数据采集任务管理平台，支持 Docker 容器化任务执行。提供完整的任务管理、调度执行、权限控制等功能。
 
-### 🚀 快速开始
+## 🚀 快速开始
+
+### 环境要求
+- **Python**: 3.12 或更高版本
+- **MySQL**: 5.7 或更高版本
+- **Redis**: 5.0 或更高版本
+- **PDM**: 现代化的 Python 依赖管理工具
+- **Docker**: 容器化任务执行支持
+
+### 安装步骤
 
 ```bash
 # 1. 克隆项目
 git clone <repository-url>
 cd shyzj-docker-crawl-task-fastapi
 
-# 2. 安装依赖
+# 2. 安装 PDM
+pip install pdm
+
+# 3. 安装依赖
 pdm install
 
-# 3. 初始化数据库
-pdm run db:reset
+# 4. 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件，配置数据库和Redis连接信息
 
-# 4. 初始化权限数据
+# 5. 初始化数据库
+pdm run db:reset
 pdm run db:init_perm
 
-# 5. 启动服务
-pdm run start          # API服务（包含权限系统）
+# 6. 启动服务
+pdm run start          # API服务
 pdm run celery:all     # Celery服务
 ```
 
-### 📚 核心文档
-
-#### 系统架构与配置
-- **[项目架构](项目架构.md)** - 系统架构设计和模块说明
-- **[安装配置](安装配置.md)** - 完整的安装、配置和部署指南
-- **[数据库管理](数据库管理.md)** - 数据库初始化、升级和管理
-- **[数据库驱动说明](数据库驱动说明.md)** - asyncmy 驱动使用说明
-
-#### 权限与安全
-- **[权限系统使用手册](权限系统使用手册.md)** - Casbin 权限管理完整指南 ⭐ 新增
-
-#### 任务管理
-- **[任务执行](任务执行.md)** - Docker容器化任务执行方案
-- **[调度执行说明](调度执行说明.md)** - 任务调度配置和使用指南
-- **[调度类型快速参考](调度类型快速参考.md)** - 调度类型速查表
-
-#### 监控与维护
-- **[Celery配置说明](Celery配置说明.md)** - Celery 和 Beat 配置详解
-- **[心跳监控配置](心跳监控配置.md)** - 任务监控和心跳机制
-
-#### API文档
-- **[API文档](http://localhost:8089/api/v1/docs)** - 自动生成的API接口文档
+### 访问系统
+- **API文档**: http://localhost:8000/docs
+- **管理界面**: http://localhost:8000
 
 ## 🏗️ 系统架构
 
@@ -66,6 +61,58 @@ pdm run celery:all     # Celery服务
 - 👤 **用户管理** - JWT认证和用户管理
 - 🔐 **权限管理** - 基于Casbin的RBAC权限控制系统
 
+## 📋 任务管理功能
+
+### 任务类型
+- **爬虫任务 (Crawler)** - 网页数据采集
+- **API任务 (API)** - 第三方API数据采集
+- **数据库任务 (Database)** - 数据库同步和迁移
+
+### 触发方式
+- **手动任务** - 通过API接口手动触发执行
+- **自动任务** - 根据调度配置自动执行
+
+### 调度类型
+- **立即执行** - 任务创建后立即执行
+- **定时执行** - 指定时间执行
+- **周期执行** - 按小时、天、周、月周期执行
+- **Cron表达式** - 支持复杂的Cron调度
+
+## 🔧 配置说明
+
+### 环境变量配置
+```bash
+# 数据库配置
+DATABASE_URL=mysql+asyncmy://root:password@localhost:3306/data_platform
+
+# Redis配置
+REDIS_URL=redis://localhost:6379/1
+
+# JWT配置
+SECRET_KEY=your-secret-key
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Docker配置
+DOCKER_REGISTRY=your-registry.com
+DOCKER_NAMESPACE=your-namespace
+```
+
+### Celery配置
+```python
+# Celery配置
+CELERY_BROKER_URL=redis://localhost:6379/1
+CELERY_RESULT_BACKEND=redis://localhost:6379/1
+CELERY_TASK_SERIALIZER=json
+CELERY_RESULT_SERIALIZER=json
+CELERY_ACCEPT_CONTENT=['json']
+```
+
+## 📚 详细文档
+
+- **[安装配置](安装配置.md)** - 完整的安装、配置和部署指南
+- **[API使用指南](API使用指南.md)** - API接口使用说明和示例
+
 ## 🛠️ 开发工具
 
 ### PDM 包管理
@@ -77,45 +124,16 @@ pdm install
 pdm run start        # 启动API服务器
 pdm run worker       # 启动Worker
 pdm run beat         # 启动调度器
+pdm run celery:all   # 启动所有Celery服务
 ```
 
 ### 数据库管理
 ```bash
-# 快速命令（详见：数据库管理.md）
+# 数据库管理命令
 pdm run db:reset      # 重置数据库
 pdm run db:init_perm  # 初始化权限数据
-pdm run db:status     # 查看状态
+pdm run db:status     # 查看数据库状态
 ```
-
-> 💡 **详细说明**: 查看 [数据库管理.md](./数据库管理.md) 了解完整的数据库管理功能
-
-## 📊 任务类型
-
-### 1. 爬虫任务 (Crawler)
-- 网页数据采集
-- 支持多种解析器
-- 实时进度监控
-
-### 2. API任务 (API)
-- 第三方API数据采集
-- 支持认证和限流
-- 自动重试机制
-
-### 3. 数据库任务 (Database)
-- 数据库同步
-- 数据迁移
-- 批量处理
-
-## 🔧 配置说明
-
-详细配置请参考：
-- **[安装配置.md](./安装配置.md)** - 完整的环境变量和配置说明
-- **[Celery配置说明.md](./Celery配置说明.md)** - Celery 和 Beat 配置
-
-## 📈 监控和维护
-
-详细监控配置请参考：
-- **[心跳监控配置.md](./心跳监控配置.md)** - 任务监控和心跳机制
 
 ## 🚀 部署指南
 
@@ -124,10 +142,12 @@ pdm run db:status     # 查看状态
 # 1. 安装依赖
 pdm install
 
-# 2. 初始化数据库
-pdm run db:reset
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env 文件
 
-# 3. 初始化权限数据
+# 3. 初始化数据库
+pdm run db:reset
 pdm run db:init_perm
 
 # 4. 启动服务
@@ -136,10 +156,17 @@ pdm run celery:all
 ```
 
 ### 生产环境
+```bash
+# 1. 使用生产环境配置
+export ENVIRONMENT=production
 
-生产环境部署请参考：
-- **[安装配置.md](./安装配置.md)** - 完整的部署配置
-- **[数据库管理.md](./数据库管理.md)** - 数据库管理最佳实践
+# 2. 启动服务
+pdm run start
+pdm run celery:all
+
+# 3. 使用进程管理器（推荐）
+# 使用 systemd, supervisor 或 pm2 管理进程
+```
 
 ## 🆘 故障排除
 
@@ -148,6 +175,7 @@ pdm run celery:all
 2. **Redis连接失败** - 验证Redis服务运行
 3. **Docker任务失败** - 检查镜像和网络配置
 4. **任务超时** - 调整超时设置和资源限制
+5. **权限错误** - 检查用户权限和角色配置
 
 ### 获取帮助
 - 查看详细文档
@@ -156,4 +184,4 @@ pdm run celery:all
 
 ---
 
-📝 **技术特点**: 本项目采用现代化的技术栈，使用简化的SQL脚本进行数据库管理，支持Docker容器化任务执行，提供简单直观的使用体验。
+📝 **技术特点**: 本项目采用现代化的技术栈，支持Docker容器化任务执行，提供简单直观的使用体验。

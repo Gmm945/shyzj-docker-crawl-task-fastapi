@@ -10,7 +10,7 @@ from ...user_manage.service.security import check_permissions
 from ...utils.schedule_utils import ScheduleUtils
 
 from ..models.task import TaskSchedule
-from ..schemas.task import TaskScheduleCreate, TaskScheduleResponse
+from ..schemas.task import TaskScheduleCreate, TaskScheduleUpdate, TaskScheduleResponse
 from ..service.task import get_task_by_id_with_permission
 from ..service.scheduler import (
     get_schedule_by_id,
@@ -204,7 +204,7 @@ async def delete_schedule(
 @router.put("/{schedule_id}")
 async def update_schedule(
     schedule_id: str,
-    schedule_data: TaskScheduleCreate,
+    schedule_data: TaskScheduleUpdate,
     db: DBSessionDep,
     user: User = Depends(check_permissions(obj))
 ):
@@ -213,7 +213,7 @@ async def update_schedule(
     
     **参数:**
     - `schedule_id`: 调度ID
-    - `schedule_data`: 包含新调度配置的 `TaskScheduleCreate` 对象
+    - `schedule_data`: 包含新调度配置的 `TaskScheduleUpdate` 对象
     
     **返回:**
     - 包含成功消息的JSON响应

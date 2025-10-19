@@ -6,8 +6,10 @@ from sqlalchemy.sql.functions import count
 from loguru import logger
 from datetime import datetime
 
-from ..models.task import Task, TaskExecution, TaskStatus, ExecutionStatus, TaskSchedule
+from ..models.task import Task, TaskExecution, TaskStatus, ExecutionStatus, TaskSchedule, ScheduleType
 from ..schemas.task import TaskPagination, TaskUpdate, TaskExecutionSummary
+from .scheduler import create_schedule
+from ...utils.schedule_utils import ScheduleUtils
 
 
 async def create_task(db: AsyncSession, task: Task):
@@ -170,9 +172,29 @@ async def update_task_with_validation(db: AsyncSession, task_id: UUID, update_da
         # 如果已经是字典，直接使用
         update_dict = update_data
     
-    # 如果触发方式从auto改为manual，需要禁用调度
-    if update_dict.get("trigger_method") == "manual" and task.trigger_method == "auto":
-        # 查找并禁用任务的调度
+    # 验证trigger_method变更的调度配置
+    schedule_created = False
+    if update_dict.get("trigger_method") == "auto" and task.trigger_method == "manual":
+        # 从手动改为自动，必须提供调度配置
+        if not update_dict.get("schedule_type") or not update_dict.get("schedule_config"):
+            return None, "从手动改为自动任务时，必须提供schedule_type和schedule_config参数"
+        
+        # 创建调度配置
+        schedule_type = update_dict.get("schedule_type")
+        schedule_config = update_dict.get("schedule_config")
+        next_run_time = ScheduleUtils.calculate_next_run_time(schedule_type, schedule_config)
+        
+        await create_schedule(
+            db,
+            str(task_id),
+            schedule_type,
+            schedule_config,
+            next_run_time
+        )
+        schedule_created = True
+        logger.info(f"任务 {task_id} 从手动改为自动，已创建调度配置")
+    elif update_dict.get("trigger_method") == "manual" and task.trigger_method == "auto":
+        # 从自动改为手动，需要禁用调度
         schedule_stmt = select(TaskSchedule).where(
             and_(TaskSchedule.task_id == str(task_id), TaskSchedule.is_delete == False)
         ).order_by(TaskSchedule.create_time.desc()).limit(1)
@@ -184,6 +206,10 @@ async def update_task_with_validation(db: AsyncSession, task_id: UUID, update_da
             logger.info(f"任务 {task_id} 从自动改为手动，已禁用调度 {schedule.id}")
     
     for field, value in update_dict.items():
+        # 跳过调度配置字段，这些字段不存储在任务表中
+        if field in ["schedule_type", "schedule_config"]:
+            continue
+            
         if field in ["base_url_params", "extract_config"] and value is not None:
             if field == "base_url_params":
                 # 确保每个参数都是 Pydantic 模型实例
@@ -216,8 +242,10 @@ async def delete_task_with_validation(db: AsyncSession, task_id: UUID, user_id: 
     if running_execution:
         return None, "任务正在执行中，请先停止任务"
     
-    await db.delete(task)
+    # 软删除：设置 is_delete = True
+    task.is_delete = True
     await db.commit()
+    logger.info(f"任务 {task_id} 已软删除")
     return task, "任务删除成功"
 
 

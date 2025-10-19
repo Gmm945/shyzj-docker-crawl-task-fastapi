@@ -248,7 +248,7 @@ async def update_task(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=message
             )
-        elif "正在执行中" in message:
+        elif "正在执行中" in message or "必须提供" in message:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=message

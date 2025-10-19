@@ -117,6 +117,10 @@ class TaskUpdate(BaseModel):
     extract_config: Optional[ExtractConfig] = None
     description: Optional[str] = None
     status: Optional[TaskStatus] = None
+    
+    # 调度配置（当trigger_method从manual改为auto时必填）
+    schedule_type: Optional[ScheduleType] = Field(None, description="调度类型，从手动改为自动时必填")
+    schedule_config: Optional[Dict[str, Any]] = Field(None, description="调度配置，从手动改为自动时必填")
 
 
 class TaskExecutionSummary(BaseModel):
@@ -204,6 +208,12 @@ class CronScheduleConfig(BaseModel):
 
 class TaskScheduleCreate(BaseModel):
     task_id: UUID
+    schedule_type: ScheduleType
+    schedule_config: Dict[str, Any]
+
+
+class TaskScheduleUpdate(BaseModel):
+    """调度更新请求模型（不包含task_id）"""
     schedule_type: ScheduleType
     schedule_config: Dict[str, Any]
 

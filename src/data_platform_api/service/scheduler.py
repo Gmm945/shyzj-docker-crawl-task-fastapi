@@ -10,7 +10,12 @@ from ...utils.schedule_utils import ScheduleUtils
 
 async def get_schedule_by_id(db: AsyncSession, schedule_id: str) -> Optional[TaskSchedule]:
     """根据ID获取调度"""
-    result = await db.execute(select(TaskSchedule).where(TaskSchedule.id == schedule_id))
+    result = await db.execute(
+        select(TaskSchedule).where(
+            TaskSchedule.id == schedule_id,
+            TaskSchedule.is_delete == False
+        )
+    )
     return result.scalar_one_or_none()
 
 
@@ -19,7 +24,8 @@ async def get_active_schedule_by_task_id(db: AsyncSession, task_id: str) -> Opti
     result = await db.execute(
         select(TaskSchedule).where(
             TaskSchedule.task_id == task_id,
-            TaskSchedule.is_active == True
+            TaskSchedule.is_active == True,
+            TaskSchedule.is_delete == False
         )
     )
     return result.scalar_one_or_none()
@@ -40,7 +46,10 @@ async def get_schedules_by_task_id(db: AsyncSession, task_id: str) -> List[TaskS
     """获取任务的所有调度配置"""
     result = await db.execute(
         select(TaskSchedule)
-        .where(TaskSchedule.task_id == task_id)
+        .where(
+            TaskSchedule.task_id == task_id,
+            TaskSchedule.is_delete == False
+        )
         .order_by(desc(TaskSchedule.create_time))
     )
     return result.scalars().all()
@@ -62,8 +71,7 @@ async def create_schedule(
         is_active=True
     )
     db.add(db_schedule)
-    await db.commit()
-    await db.refresh(db_schedule)
+    await db.flush()  # 刷新到数据库但不提交事务
     logger.info(f"创建调度成功: {db_schedule.id}, 任务ID: {task_id}")
     return db_schedule
 
@@ -86,16 +94,20 @@ async def update_schedule_status(
 async def delete_schedule(db: AsyncSession, schedule: TaskSchedule) -> None:
     """删除调度"""
     schedule_id = schedule.id
-    await db.delete(schedule)
+    # 软删除：设置 is_delete = True
+    schedule.is_delete = True
     await db.commit()
-    logger.info(f"删除调度成功: {schedule_id}")
+    logger.info(f"调度已软删除: {schedule_id}")
 
 
 async def get_all_active_schedules(db: AsyncSession) -> List[TaskSchedule]:
     """获取所有活跃的调度配置"""
     result = await db.execute(
         select(TaskSchedule)
-        .where(TaskSchedule.is_active == True)
+        .where(
+            TaskSchedule.is_active == True,
+            TaskSchedule.is_delete == False
+        )
         .order_by(TaskSchedule.next_run_time)
     )
     return result.scalars().all()
@@ -116,7 +128,7 @@ async def update_schedule_config(
     next_run_time = ScheduleUtils.calculate_next_run_time(schedule_type, schedule_config)
     schedule.next_run_time = next_run_time
     
-    await db.commit()
+    await db.flush()  # 刷新到数据库但不提交事务
     logger.info(f"更新调度配置成功: {schedule.id}, 下次执行时间: {next_run_time}")
     return schedule
 
