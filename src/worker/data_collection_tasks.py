@@ -33,6 +33,7 @@ from .file_tasks import (
     cleanup_remote_config_files,
     get_docker_container_logs,
 )
+from .monitoring_tasks import check_docker_container_status
 
 
 def execute_data_collection_task_impl(
@@ -173,6 +174,18 @@ def _execute_crawler_task_with_docker(task_name: str, execution_id: str, config_
         # 容器名格式：task-{execution_id}
         container_name = f"task-{execution_id}"
         logger.info(f"Docker爬虫容器已启动: {container_name} (ID: {container_id})")
+        
+        # 验证容器是否真正启动成功
+        container_status = check_docker_container_status(container_id)
+        if not container_status.get("exists") or not container_status.get("running"):
+            logger.error(f"容器启动验证失败: {container_id}, 状态: {container_status}")
+            # 清理失败的容器
+            try:
+                stop_docker_task_container(container_id)
+            except:
+                pass
+            raise Exception(f"Docker容器不存下或已删除: {container_status.get('status', 'unknown')}")
+        
         # 更新执行记录：写入容器名与开始时间、状态running
         try:
             update_task_execution_status(
@@ -262,6 +275,17 @@ def _execute_api_task_with_docker(task_name: str, execution_id: str, config_data
         # 容器名格式：task-{execution_id}
         container_name = f"task-{execution_id}"
         logger.info(f"Docker API容器已启动: {container_name} (ID: {container_id})")
+        
+        # 验证容器是否真正启动成功
+        container_status = check_docker_container_status(container_id)
+        if not container_status.get("exists") or not container_status.get("running"):
+            logger.error(f"容器启动验证失败: {container_id}, 状态: {container_status}")
+            # 清理失败的容器
+            try:
+                stop_docker_task_container(container_id)
+            except:
+                pass
+            raise Exception(f"Docker容器不存下或已删除: {container_status.get('status', 'unknown')}")
         
         # 更新执行记录：写入容器名与开始时间、状态running
         try:
@@ -357,6 +381,17 @@ def _execute_database_task_with_docker(task_name: str, execution_id: str, config
         # 容器名格式：task-{execution_id}
         container_name = f"task-{execution_id}"
         logger.info(f"Docker数据库容器已启动: {container_name} (ID: {container_id})")
+        
+        # 验证容器是否真正启动成功
+        container_status = check_docker_container_status(container_id)
+        if not container_status.get("exists") or not container_status.get("running"):
+            logger.error(f"容器启动验证失败: {container_id}, 状态: {container_status}")
+            # 清理失败的容器
+            try:
+                stop_docker_task_container(container_id)
+            except:
+                pass
+            raise Exception(f"Docker容器不存下或已删除: {container_status.get('status', 'unknown')}")
         
         # 更新执行记录：写入容器名与开始时间、状态running
         try:

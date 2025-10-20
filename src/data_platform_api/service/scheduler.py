@@ -128,7 +128,7 @@ async def update_schedule_config(
     next_run_time = ScheduleUtils.calculate_next_run_time(schedule_type, schedule_config)
     schedule.next_run_time = next_run_time
     
-    await db.flush()  # 刷新到数据库但不提交事务
+    await db.commit()  # 提交事务确保数据持久化
     logger.info(f"更新调度配置成功: {schedule.id}, 下次执行时间: {next_run_time}")
     return schedule
 

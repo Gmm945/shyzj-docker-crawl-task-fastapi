@@ -242,10 +242,17 @@ async def delete_task_with_validation(db: AsyncSession, task_id: UUID, user_id: 
     if running_execution:
         return None, "任务正在执行中，请先停止任务"
     
-    # 软删除：设置 is_delete = True
+    # 软删除任务：设置 is_delete = True
     task.is_delete = True
+    
+    # 同时软删除相关的调度记录
+    schedule_stmt = update(TaskSchedule).where(
+        TaskSchedule.task_id == str(task_id)
+    ).values(is_delete=True)
+    await db.execute(schedule_stmt)
+    
     await db.commit()
-    logger.info(f"任务 {task_id} 已软删除")
+    logger.info(f"任务 {task_id} 及其调度记录已软删除")
     return task, "任务删除成功"
 
 
@@ -373,7 +380,10 @@ async def activate_task_with_validation(db: AsyncSession, task_id: UUID, user_id
     
     # 更新任务状态为激活
     await update_task_status(db, task_id, TaskStatus.ACTIVE)
-    return task, "任务激活成功"
+    
+    # 重新获取更新后的任务对象
+    updated_task = await get_task_by_id_with_permission(db, task_id, user_id, is_admin)
+    return updated_task, "任务激活成功"
 
 
 async def deactivate_task_with_validation(db: AsyncSession, task_id: UUID, user_id: str, is_admin: bool = False):
@@ -393,7 +403,10 @@ async def deactivate_task_with_validation(db: AsyncSession, task_id: UUID, user_
     
     # 更新任务状态为停用
     await update_task_status(db, task_id, TaskStatus.PAUSED)
-    return task, "任务已停用"
+    
+    # 重新获取更新后的任务对象
+    updated_task = await get_task_by_id_with_permission(db, task_id, user_id, is_admin)
+    return updated_task, "任务已停用"
 
 
 async def fix_stopped_tasks_status(db: AsyncSession):
