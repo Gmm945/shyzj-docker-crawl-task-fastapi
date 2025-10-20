@@ -101,14 +101,16 @@ async def update_task_by_id(db: AsyncSession, task_id: UUID, update_data: dict):
 
 async def update_task_status(db: AsyncSession, task_id: UUID, status: TaskStatus):
     """更新任务状态"""
-    stmt = update(Task).where(and_(Task.id == task_id, Task.is_delete == False)).values({Task.status: status})
+    task_id_str = str(task_id)
+    stmt = update(Task).where(and_(Task.id == task_id_str, Task.is_delete == False)).values(status=status)
     await db.execute(stmt)
     await db.commit()
 
 
 async def delete_task_by_id(db: AsyncSession, task_id: UUID):
     """软删除任务"""
-    stmt = update(Task).where(Task.id == task_id).values({Task.is_delete: True})
+    task_id_str = str(task_id)
+    stmt = update(Task).where(Task.id == task_id_str).values(is_delete=True)
     await db.execute(stmt)
     await db.commit()
 
@@ -172,7 +174,7 @@ async def update_task_with_validation(db: AsyncSession, task_id: UUID, update_da
         # 如果已经是字典，直接使用
         update_dict = update_data
     
-    # 验证trigger_method变更的调度配置
+    # 处理调度配置变更 - 简化逻辑：删除旧调度，创建新调度
     schedule_created = False
     if update_dict.get("trigger_method") == "auto" and task.trigger_method == "manual":
         # 从手动改为自动，必须提供调度配置
@@ -194,16 +196,46 @@ async def update_task_with_validation(db: AsyncSession, task_id: UUID, update_da
         schedule_created = True
         logger.info(f"任务 {task_id} 从手动改为自动，已创建调度配置")
     elif update_dict.get("trigger_method") == "manual" and task.trigger_method == "auto":
-        # 从自动改为手动，需要禁用调度
+        # 从自动改为手动，删除所有调度
         schedule_stmt = select(TaskSchedule).where(
             and_(TaskSchedule.task_id == str(task_id), TaskSchedule.is_delete == False)
-        ).order_by(TaskSchedule.create_time.desc()).limit(1)
+        )
         schedule_result = await db.execute(schedule_stmt)
-        schedule = schedule_result.scalars().first()
+        schedules = schedule_result.scalars().all()
         
-        if schedule:
-            schedule.is_active = False
-            logger.info(f"任务 {task_id} 从自动改为手动，已禁用调度 {schedule.id}")
+        for schedule in schedules:
+            schedule.is_delete = True
+            logger.info(f"任务 {task_id} 从自动改为手动，已删除调度 {schedule.id}")
+    elif task.trigger_method == "auto" and (update_dict.get("schedule_type") or update_dict.get("schedule_config")):
+        # 自动任务更新调度配置：删除旧调度，创建新调度
+        if not update_dict.get("schedule_type") or not update_dict.get("schedule_config"):
+            return None, "更新自动任务调度配置时，必须提供schedule_type和schedule_config参数"
+        
+        # 删除所有旧调度
+        schedule_stmt = select(TaskSchedule).where(
+            and_(TaskSchedule.task_id == str(task_id), TaskSchedule.is_delete == False)
+        )
+        schedule_result = await db.execute(schedule_stmt)
+        old_schedules = schedule_result.scalars().all()
+        
+        for schedule in old_schedules:
+            schedule.is_delete = True
+            logger.info(f"任务 {task_id} 更新调度配置，已删除旧调度 {schedule.id}")
+        
+        # 创建新调度
+        schedule_type = update_dict.get("schedule_type")
+        schedule_config = update_dict.get("schedule_config")
+        next_run_time = ScheduleUtils.calculate_next_run_time(schedule_type, schedule_config)
+        
+        await create_schedule(
+            db,
+            str(task_id),
+            schedule_type,
+            schedule_config,
+            next_run_time
+        )
+        schedule_created = True
+        logger.info(f"任务 {task_id} 更新调度配置，已创建新调度")
     
     for field, value in update_dict.items():
         # 跳过调度配置字段，这些字段不存储在任务表中
