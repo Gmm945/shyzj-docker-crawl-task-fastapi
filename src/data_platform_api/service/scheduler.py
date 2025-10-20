@@ -71,7 +71,7 @@ async def create_schedule(
         is_active=True
     )
     db.add(db_schedule)
-    await db.flush()  # 刷新到数据库但不提交事务
+    await db.commit()  # 提交事务确保数据持久化
     logger.info(f"创建调度成功: {db_schedule.id}, 任务ID: {task_id}")
     return db_schedule
 
