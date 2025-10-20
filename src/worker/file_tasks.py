@@ -2,6 +2,8 @@ import os
 import json
 import shutil
 import subprocess
+import time
+import random
 from typing import Dict, Any, Optional
 import socket
 from uuid import UUID
@@ -14,8 +16,8 @@ from ..data_platform_api.models.task import TaskExecution
 from ..config.auth_config import settings
 from .db_tasks import update_task_execution_docker_info
 
-# 端口使用缓存（单次进程内，避免重复尝试同端口）
-_USED_PORTS_CACHE: set[int] = set()
+# 端口使用缓存（已废弃，现在使用实时检测）
+# _USED_PORTS_CACHE: set[int] = set()
 
 
 def check_ssh_connection(host: str, user: str = None) -> bool:
@@ -300,6 +302,23 @@ def upload_config_to_remote_machine(local_config_file: str, execution_id: UUID) 
         raise
 
 
+def _is_docker_port_in_use(port: int) -> bool:
+    """检查Docker容器是否占用了指定端口"""
+    try:
+        # 使用docker ps检查端口占用
+        result = subprocess.run(
+            ["docker", "ps", "--format", "table {{.Ports}}"],
+            capture_output=True, text=True, timeout=10
+        )
+        if result.returncode == 0:
+            # 检查输出中是否包含该端口
+            return f":{port}->" in result.stdout or f"0.0.0.0:{port}->" in result.stdout
+        return False
+    except Exception as e:
+        logger.warning(f"检查Docker端口占用失败: {e}")
+        return False
+
+
 def _is_remote_port_listening(port: int) -> bool:
     """检测远程主机端口是否被占用（监听中）。
     优先使用 ss，其次使用 netstat，最后尝试 lsof。
@@ -332,7 +351,7 @@ def _is_remote_port_listening(port: int) -> bool:
 def _mark_port_as_used_once(port: Optional[int]) -> None:
     if port is None:
         return
-    _USED_PORTS_CACHE.add(port)
+    # 端口缓存已废弃，使用实时检测
 
 
 def start_docker_task_container(execution_id: UUID, docker_image: str, config_path: str, 
@@ -406,8 +425,19 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
         container_port = settings.DOCKER_PORT  # 使用统一的API端口
         max_attempts = 5
         last_error: Optional[str] = None
-        for _ in range(max_attempts):
+        for attempt in range(max_attempts):
+            # 添加随机延迟避免并发冲突
+            if attempt > 0:
+                delay = random.uniform(0.1, 0.5)
+                logger.debug(f"端口分配重试 {attempt + 1}/{max_attempts}，延迟 {delay:.2f}s")
+                time.sleep(delay)
+            
             host_port = _allocate_remote_port()
+            if not host_port:
+                last_error = "端口分配失败，没有可用端口"
+                logger.warning(f"端口分配失败，尝试重试...")
+                continue
+                
             docker_command = list(base_command)
             if host_port and container_port:
                 docker_command.extend(["-p", f"{host_port}:{container_port}"])
@@ -457,52 +487,94 @@ def start_docker_task_container(execution_id: UUID, docker_image: str, config_pa
 
 
 def _allocate_remote_port() -> Optional[int]:
-    """在远程或本机分配可用端口，支持远程探测并跳过缓存中已用端口。"""
+    """在远程或本机分配可用端口，实时检测端口占用情况。"""
     start = settings.PORT_RANGE_START
     end = settings.PORT_RANGE_END
     host = settings.DOCKER_HOST_IP
+    
+    # 添加随机延迟避免并发冲突
+    delay = random.uniform(0.01, 0.1)
+    time.sleep(delay)
+    
     if settings.is_local_docker:
-        for port in range(start, end + 1):
-            if port in _USED_PORTS_CACHE:
+        # 随机化端口搜索顺序，减少冲突
+        ports = list(range(start, end + 1))
+        random.shuffle(ports)
+        
+        for port in ports:
+            # 检查Docker容器是否已占用该端口
+            if _is_docker_port_in_use(port):
+                logger.debug(f"端口 {port} 被Docker容器占用，尝试下一个")
                 continue
+            
+            # 实时检测端口是否被占用
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 try:
                     s.bind(("127.0.0.1", port))
-                    _USED_PORTS_CACHE.add(port)
+                    # 端口可用，立即返回（不使用缓存）
+                    logger.info(f"分配端口: {port}")
                     return port
                 except OSError:
+                    logger.debug(f"端口 {port} 已被占用，尝试下一个")
                     continue
+        logger.error(f"端口范围 {start}-{end} 内没有可用端口")
         return None
     else:
         # 远程主机：通过 ssh 在远端检测端口是否可用
         for port in range(start, end + 1):
-            if port in _USED_PORTS_CACHE:
-                continue
+            # 实时检测远程端口是否被占用
             if not _is_remote_port_listening(port):
-                _USED_PORTS_CACHE.add(port)
+                logger.info(f"分配远程端口: {port}")
                 return port
+            else:
+                logger.debug(f"远程端口 {port} 已被占用，尝试下一个")
+        logger.error(f"远程端口范围 {start}-{end} 内没有可用端口")
         return None
 
 
 def _mark_port_as_used_once(port: Optional[int]) -> None:
+    """标记端口已使用（已废弃，现在使用实时检测）"""
     if port is None:
         return
-    _USED_PORTS_CACHE.add(port)
+    logger.debug(f"端口 {port} 已分配")
 
 
-def stop_docker_task_container(container_id: str) -> bool:
-    """停止Docker任务容器"""
+def _release_port(port: Optional[int]) -> None:
+    """释放端口（已废弃，现在使用实时检测）"""
+    if port is None:
+        return
+    logger.debug(f"端口 {port} 已释放")
+
+
+def release_port_by_container_id(container_id: str) -> None:
+    """根据容器ID释放端口（已废弃，现在使用实时检测）"""
+    logger.debug(f"容器 {container_id} 端口释放（实时检测模式）")
+
+
+def stop_docker_task_container(container_id: str, port: Optional[int] = None) -> bool:
+    """停止Docker任务容器并释放端口"""
     try:
-        stop_command = [
-            "ssh", get_ssh_host_string(settings.DOCKER_HOST_IP),
-            "docker", "stop", container_id
-        ]
+        if settings.is_local_docker:
+            # 本地环境直接使用docker命令
+            stop_command = ["docker", "stop", container_id]
+        else:
+            # 远程环境使用SSH
+            stop_command = [
+                "ssh", get_ssh_host_string(settings.DOCKER_HOST_IP),
+                "docker", "stop", container_id
+            ]
         
         result = subprocess.run(stop_command, capture_output=True, text=True, timeout=30)
         
         if result.returncode == 0:
             logger.info(f"Docker task container stopped: {container_id}")
+            # 释放端口
+            if port is not None:
+                _release_port(port)
+            else:
+                # 尝试根据容器ID释放端口
+                release_port_by_container_id(container_id)
             return True
         else:
             logger.error(f"Failed to stop Docker container: {result.stderr}")

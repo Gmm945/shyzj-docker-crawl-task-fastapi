@@ -82,8 +82,8 @@ celery_app.conf.update(
     result_backend=settings.celery_result_backend,
     # Set the expiration time for task results
     result_expires=timedelta(days=2),
-    # Set 4 worker threads, each thread can handle 2 tasks simultaneously
-    worker_concurrency=4,
+    # Set 1 worker thread to ensure sequential task execution
+    worker_concurrency=1,
     worker_prefetch_multiplier=1,
     task_default_retry_delay=0,
     task_default_max_retries=0,   

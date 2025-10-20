@@ -390,7 +390,7 @@ def heartbeat_monitor_impl(
     self,
     namespace: str = "heartbeat_monitor"
 ):
-    """心跳监控任务 - 检测任务超时和失联，并检查Docker容器实际状态"""
+    """心跳监控任务 - 基于数据库表数据的解耦监控，检查任务超时"""
     try:
         self.update_status(0, "PENDING", "开始心跳监控", namespace=namespace)
         
@@ -399,135 +399,75 @@ def heartbeat_monitor_impl(
         self.update_status(20, "PROGRESS", f"找到 {len(running_executions)} 个正在执行的任务", namespace=namespace)
         
         timeout_count = 0
-        disconnect_count = 0
-        container_stopped_count = 0
+        failed_count = 0
         processed_count = 0
         
-        # 心跳超时配置（秒）
-        heartbeat_timeout = settings.HEARTBEAT_TIMEOUT  # 默认5分钟
-        max_timeout_count = 3  # 最大超时次数
+        # 任务超时配置（3分钟）
+        task_timeout = 180  # 3分钟
         
         for execution in running_executions:
             try:
                 processed_count += 1
                 
-                # 【新增】首先检查 Docker 容器实际状态
+                # 检查任务运行时间是否超时
+                if execution.start_time:
+                    elapsed_time = (datetime.now() - execution.start_time).total_seconds()
+                    
+                    if elapsed_time > task_timeout:
+                        logger.error(f"任务运行超时: {execution.id}, 运行时间: {elapsed_time:.1f}秒")
+                        update_task_execution_status(
+                            execution.id,
+                            ExecutionStatus.FAILED,
+                            end_time=datetime.now(),
+                            error_log=f"任务运行超时，运行时间: {elapsed_time:.1f}秒"
+                        )
+                        timeout_count += 1
+                        continue
+                
+                # 检查容器状态（如果存在容器ID）
                 if execution.docker_container_id:
                     container_status = check_docker_container_status(execution.docker_container_id)
                     
-                    # 如果容器不存在或已停止，立即标记为失败
+                    # 如果容器不存在，可能是正常完成或被清理
                     if not container_status.get("exists", False):
-                        logger.warning(f"容器不存在，任务标记为失败: {execution.id}, 容器ID: {execution.docker_container_id}")
-                        update_task_execution_status(
-                            execution.id,
-                            ExecutionStatus.FAILED,
-                            end_time=datetime.now(),
-                            error_log="Docker容器不存在或已被删除"
-                        )
-                        container_stopped_count += 1
+                        logger.info(f"容器不存在: {execution.id}, 可能已完成")
+                        # 不立即标记失败，等待任务完成通知
                         continue
                     
-                    if not container_status.get("running", False):
-                        exit_code = container_status.get("exit_code")
-                        status_str = container_status.get("status", "unknown")
-                        
-                        # 容器已停止，根据退出码判断是否成功
+                    # 如果容器存在但已退出
+                    if container_status.get("status") == "exited":
+                        exit_code = container_status.get("exit_code", 0)
                         if exit_code == 0:
-                            # 正常退出，但没有调用completion接口，标记为成功
-                            logger.info(f"容器正常退出但未通知，标记为成功: {execution.id}, 容器ID: {execution.docker_container_id}")
-                            update_task_execution_status(
-                                execution.id,
-                                ExecutionStatus.SUCCESS,
-                                end_time=datetime.now(),
-                                error_log=f"容器正常退出(exit_code=0)但未调用completion接口"
-                            )
+                            logger.info(f"容器正常退出: {execution.id}, 退出码: {exit_code}")
+                            # 容器正常退出，等待任务完成通知
+                            continue
                         else:
-                            # 异常退出
-                            logger.error(f"容器异常退出，任务标记为失败: {execution.id}, 容器ID: {execution.docker_container_id}, 退出码: {exit_code}, 状态: {status_str}")
+                            logger.error(f"容器异常退出: {execution.id}, 退出码: {exit_code}")
                             update_task_execution_status(
                                 execution.id,
                                 ExecutionStatus.FAILED,
                                 end_time=datetime.now(),
-                                error_log=f"Docker容器异常退出 (exit_code={exit_code}, status={status_str})"
+                                error_log=f"Docker容器异常退出，退出码: {exit_code}"
                             )
-                        container_stopped_count += 1
-                        continue
+                            failed_count += 1
+                            continue
                 
-                # 检查是否有心跳记录
-                if not execution.last_heartbeat:
-                    # 没有心跳记录，检查是否超过启动时间 + 心跳超时
-                    if execution.start_time:
-                        timeout_threshold = execution.start_time + timedelta(seconds=heartbeat_timeout)
-                        if datetime.now() > timeout_threshold:
-                            logger.warning(f"任务从未发送心跳，可能已失联: {execution.id}")
-                            update_task_execution_status(
-                                execution.id,
-                                ExecutionStatus.FAILED,
-                                end_time=datetime.now(),
-                                error_log="任务启动后从未发送心跳，可能已失联"
-                            )
-                            disconnect_count += 1
-                    continue
-                
-                # 检查心跳超时
-                timeout_threshold = datetime.now() - timedelta(seconds=heartbeat_timeout)
-                if execution.last_heartbeat < timeout_threshold:
-                    # 从Redis获取超时计数
-                    timeout_key = f"heartbeat_timeout_count:{execution.id}"
-                    try:
-                        current_count = redis_client.get(timeout_key)
-                        current_count = int(current_count) + 1 if current_count else 1
-                        redis_client.set(timeout_key, current_count, ex=heartbeat_timeout * 2)
-                        
-                        logger.warning(f"任务心跳超时第 {current_count} 次: {execution.id}")
-                        
-                        if current_count >= max_timeout_count:
-                            # 超时三次，标记为失联
-                            logger.error(f"任务连续超时 {current_count} 次，标记为失联: {execution.id}")
-                            update_task_execution_status(
-                                execution.id,
-                                ExecutionStatus.FAILED,
-                                end_time=datetime.now(),
-                                error_log=f"任务连续心跳超时 {current_count} 次，已失联"
-                            )
-                            disconnect_count += 1
-                            # 清除超时计数
-                            redis_client.delete(timeout_key)
-                        else:
-                            timeout_count += 1
-                            
-                    except Exception as redis_e:
-                        logger.error(f"处理Redis超时计数失败: {redis_e}")
-                        # Redis异常时直接标记为超时
-                        update_task_execution_status(
-                            execution.id,
-                            ExecutionStatus.FAILED,
-                            end_time=datetime.now(),
-                            error_log="心跳超时且Redis异常"
-                        )
-                        disconnect_count += 1
-                else:
-                    # 心跳正常，清除超时计数
-                    timeout_key = f"heartbeat_timeout_count:{execution.id}"
-                    try:
-                        redis_client.delete(timeout_key)
-                    except:
-                        pass
+                # 任务仍在运行，记录日志
+                logger.debug(f"任务仍在运行: {execution.id}, 运行时间: {elapsed_time:.1f}秒")
                 
             except Exception as e:
                 logger.error(f"处理任务心跳监控失败 {execution.id}: {e}")
                 continue
         
         self.update_status(100, "SUCCESS", 
-                          f"心跳监控完成，处理了 {processed_count} 个任务，{timeout_count} 个超时，{disconnect_count} 个失联，{container_stopped_count} 个容器已停止", 
-                          namespace=namespace)
+                        f"心跳监控完成，处理了 {processed_count} 个任务，{timeout_count} 个超时，{failed_count} 个失败", 
+                        namespace=namespace)
         
         return {
             "total_executions": len(running_executions),
             "processed_count": processed_count,
             "timeout_count": timeout_count,
-            "disconnect_count": disconnect_count,
-            "container_stopped_count": container_stopped_count,
+            "failed_count": failed_count,
             "message": "心跳监控完成"
         }
         

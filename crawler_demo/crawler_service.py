@@ -80,8 +80,10 @@ class SimpleCrawler:
         self.session.mount('http://', adapter)
         self.session.mount('https://', adapter)
         
-        self.timeout = self.config.get('timeout', 30)
-        self.delay = self.config.get('delay', 1)
+        # 从顶层或extract_config中获取timeout和delay
+        extract_config = self.config.get('extract_config', {})
+        self.timeout = self.config.get('timeout', extract_config.get('timeout', 30))
+        self.delay = self.config.get('delay', extract_config.get('delay', 1))
         
     def start(self):
         """启动爬虫任务"""
@@ -102,7 +104,9 @@ class SimpleCrawler:
     def _crawl_targets(self):
         """爬取目标URL列表"""
         base_url = self.config['base_url']
-        target_urls = self.config.get('target_urls', [base_url])
+        extract_config = self.config.get('extract_config', {})
+        target_urls = self.config.get('target_urls', extract_config.get('target_urls', [base_url]))
+        
         
         if base_url not in target_urls:
             target_urls.insert(0, base_url)
@@ -259,7 +263,7 @@ class HeartbeatClient:
             )
             
             if response.status_code == 200:
-                logger.debug(f"心跳发送成功: {progress['percentage']:.1f}%")
+                logger.info(f"心跳发送成功: {progress['percentage']:.1f}%")
             else:
                 logger.warning(f"心跳请求失败: {response.status_code}")
                 
