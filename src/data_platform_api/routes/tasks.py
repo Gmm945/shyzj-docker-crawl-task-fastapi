@@ -350,17 +350,6 @@ async def execute_task_now(
         "extract_config": task.extract_config,
         "description": task.description,
     }
-    
-    # 如果extract_config中有timeout和delay，提取到顶层
-    if task.extract_config:
-        if "timeout" in task.extract_config:
-            config_data["timeout"] = task.extract_config["timeout"]
-        if "delay" in task.extract_config:
-            config_data["delay"] = task.extract_config["delay"]
-        if "target_urls" in task.extract_config:
-            config_data["target_urls"] = task.extract_config["target_urls"]
-        if "docker_image" in task.extract_config:
-            config_data["docker_image"] = task.extract_config["docker_image"]
     # 提交到Celery执行
     execute_data_collection_task.delay(str(task.id), str(db_execution.id), config_data)
     return ResponseModel(message="任务已提交执行", data={"execution_id": db_execution.id})
