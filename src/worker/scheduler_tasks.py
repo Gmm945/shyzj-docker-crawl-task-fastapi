@@ -174,10 +174,12 @@ def update_next_run_time(task_schedule: TaskSchedule) -> bool:
             
             # 使用 ScheduleUtils 计算下次执行时间
             config = schedule.schedule_config or {}
-            next_time = ScheduleUtils.calculate_next_run_time(schedule.schedule_type, config)
+            # 将字符串转换为 ScheduleType 枚举
+            schedule_type_enum = ScheduleType(schedule.schedule_type) if isinstance(schedule.schedule_type, str) else schedule.schedule_type
+            next_time = ScheduleUtils.calculate_next_run_time(schedule_type_enum, config)
             
             # 处理特殊调度类型
-            if schedule.schedule_type == ScheduleType.SCHEDULED:
+            if schedule_type_enum == ScheduleType.SCHEDULED:
                 # 一次性调度，执行后禁用
                 schedule.is_active = False
                 

@@ -30,13 +30,14 @@ class ExecutionStatus(str, enum.Enum):
 
 
 class ScheduleType(str, enum.Enum):
-    IMMEDIATE = "immediate"
-    SCHEDULED = "scheduled"
-    MINUTELY = "minutely"
-    HOURLY = "hourly"
-    DAILY = "daily"
-    WEEKLY = "weekly"
-    MONTHLY = "monthly"
+    """调度类型枚举"""
+    IMMEDIATE = "immediate"  # 即时执行
+    SCHEDULED = "scheduled"  # 指定时间执行
+    INTERVAL = "interval"   # 间隔执行（分钟/小时级别）
+    DAILY = "daily"         # 每天执行
+    WEEKLY = "weekly"       # 每周执行
+    MONTHLY = "monthly"     # 每月执行
+    CRON = "cron"          # Cron表达式
 
 
 class Task(BaseModel):

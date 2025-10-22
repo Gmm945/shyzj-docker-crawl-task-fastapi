@@ -186,8 +186,14 @@ class WeeklyScheduleConfig(BaseModel):
 
 
 class MonthlyScheduleConfig(BaseModel):
-    """月调度配置"""
-    dates: List[int] = Field(..., description="每月几号执行，1-31", min_items=1)
+    """月调度配置
+    
+    注意：
+    1. 如果某个日期在该月不存在（如2月30日），系统会自动跳过该日期
+    2. 使用 -1 表示每月最后一天，会自动适配不同月份的天数
+    例如：[1, 15, -1] 表示每月1号、15号和最后一天执行
+    """
+    dates: List[int] = Field(..., description="每月几号执行，1-31或-1（最后一天）", min_items=1)
     time: str = Field(..., description="执行时间，格式: HH:MM:SS")
 
 
@@ -198,7 +204,8 @@ class DailyScheduleConfig(BaseModel):
 
 class IntervalScheduleConfig(BaseModel):
     """间隔调度配置"""
-    interval: int = Field(..., description="间隔时间（秒）", gt=0)
+    interval: int = Field(..., description="间隔时间", gt=0)
+    unit: str = Field(default="seconds", description="时间单位：seconds(秒), minutes(分钟), hours(小时)")
 
 
 class CronScheduleConfig(BaseModel):
